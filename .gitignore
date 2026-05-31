@@ -44,3 +44,15 @@ sessions/
 
 # Trash
 trash/
+
+# Testing & type checking
+.pytest_cache/
+.mypy_cache/
+.tox/
+.coverage
+htmlcov/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/

@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "haney"
+version = "0.1.0"
+description = "Terminal-based AI coding assistant inspired by Claude Code, OpenCode, Gemini CLI, and Pi Coding Agent."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.13"
+authors = [
+    {name = "Sakthivel T."},
+]
+keywords = [
+    "ai",
+    "cli",
+    "coding-assistant",
+    "terminal",
+    "llm",
+    "litellm",
+    "developer-tools",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development",
+    "Topic :: Terminals",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "typer>=0.15.0",
+    "rich>=13.0.0",
+    "litellm>=1.50.0",
+    "exa-py>=1.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/sakthivel-t/haney"
+Repository = "https://github.com/sakthivel-t/haney"
+Issues = "https://github.com/sakthivel-t/haney/issues"
+
+[project.scripts]
+haney = "haney.cli:app"
+
+[tool.setuptools]
+packages = ["haney", "haney.tools", "haney.ui"]
+
+[tool.setuptools.package-data]
+haney = ["*.md"]
