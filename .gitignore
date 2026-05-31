@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Haney runtime — keep local, not committed
+.haney/
+
+# Project awareness files — local only
+plan.md
+memory.md
+summary.md
+tasks.md
+architecture.md
+requirements.md
+
+# Session archives
+sessions/
+
+# Trash
+trash/
