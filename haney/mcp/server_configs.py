@@ -51,6 +51,19 @@ MCP_SERVERS: dict[str, MCPServerConfig] = {
         requires_node=True,
         npm_package="@modelcontextprotocol/server-github",
     ),
+    "stackoverflow": MCPServerConfig(
+        display_name="Stack Overflow",
+        command="npx",
+        args=["-y", "mcp-remote", "https://mcp.stackoverflow.com"],
+        env_token_key="",
+        description=(
+            "Stack Overflow knowledge base — search questions, "
+            "retrieve answers, comments, and accepted solutions"
+        ),
+        requires_auth=False,  # OAuth handled by mcp-remote automatically
+        requires_node=True,
+        npm_package="mcp-remote",
+    ),
 }
 
 

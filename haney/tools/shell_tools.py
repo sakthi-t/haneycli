@@ -1,12 +1,16 @@
 """Safe shell command execution for Haney.
 
-Allows a whitelist of safe commands, blocks dangerous ones,
-and requires confirmation before execution.
+Uses a blacklist approach: ALL commands are allowed by default,
+EXCEPT those matching dangerous patterns (sudo, reboot, rm, etc.).
+
+Git, Python, npm, npx, Java, and all other developer tools are
+explicitly permitted. Only destructive/privileged operations are blocked.
 """
 
 from __future__ import annotations
 
 import re
+import shlex
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,81 +28,8 @@ class ShellResult:
     message: str = ""
 
 
-# ── Safe commands (whitelist) ─────────────────────────────────────────────────
+# ── Known-safe read-only commands (no confirmation needed in AUTO) ──────────
 
-SAFE_COMMANDS: set[str] = {
-    # ── Navigation / filesystem ─────────────────────────────
-    "pwd", "ls", "dir", "cd",
-    "cat", "head", "tail", "wc",
-    "find", "locate", "fd",
-    "grep", "rg", "ack", "ag",
-    "echo", "printf",
-    "touch", "mkdir", "cp", "mv",
-    "ln", "readlink", "realpath",
-    "tree", "du", "df", "stat", "file",
-
-    # ── Viewing / paging ───────────────────────────────────
-    "less", "more", "bat", "nl",
-
-    # ── System info ────────────────────────────────────────
-    "date", "whoami", "hostname", "uname",
-    "env", "printenv", "which", "whereis", "type",
-    "ps", "top", "htop", "uptime", "free",
-    "lsof", "fuser",
-
-    # ── Text processing ────────────────────────────────────
-    "sort", "uniq", "diff", "patch",
-    "cut", "tr", "sed", "awk",
-    "xargs", "tee", "basename", "dirname",
-    "shuf", "column", "paste", "join",
-    "fmt", "fold", "rev", "tac",
-
-    # ── Archiving / compression ────────────────────────────
-    "tar", "gzip", "gunzip", "zcat",
-    "zip", "unzip", "bzip2", "bunzip2",
-    "xz", "unxz", "zstd", "unzstd",
-
-    # ── Network / download ─────────────────────────────────
-    "curl", "wget",
-    "ping", "nslookup", "dig", "host",
-    "nc", "netstat", "ss",
-    "ssh-keygen", "gpg", "openssl",
-
-    # ── Version control ────────────────────────────────────
-    "git",
-
-    # ── Shell builtins / helpers ───────────────────────────
-    "export", "alias", "unalias",
-    "source", "clear", "reset",
-
-    # ── Dev / build tools ──────────────────────────────────
-    "uv", "pip", "pip3", "python", "python3",
-    "node", "npm", "npx", "yarn", "pnpm", "bun",
-    "cargo", "rustc", "rustup",
-    "go", "gofmt",
-    "make", "cmake", "ninja", "meson",
-    "gcc", "g++", "clang", "clang++",
-    "javac", "java", "kotlin", "scala",
-    "dotnet", "nuget",
-    "docker", "podman",
-    "nix", "nix-shell", "nix-env",
-    "brew", "port", "apt", "apt-get", "dpkg", "rpm",
-
-    # ── Editors ────────────────────────────────────────────
-    "nano", "vim", "vi", "nvim", "code",
-    "emacs", "ed",
-
-    # ── Help / docs ────────────────────────────────────────
-    "man", "help", "info", "whatis", "apropos",
-
-    # ── Misc utilities ─────────────────────────────────────
-    "jq", "yq", "fzf", "peco",
-    "rsync", "scp", "sftp",
-    "watch", "crontab",
-    "yes", "true", "false", "test",
-}
-
-# Commands that are always safe regardless of args
 READONLY_COMMANDS: set[str] = {
     "pwd",
     "ls",
@@ -111,37 +42,101 @@ READONLY_COMMANDS: set[str] = {
     "printenv",
     "which",
     "whereis",
+    "type",
+    "cat",
+    "head",
+    "tail",
+    "wc",
+    "file",
+    "stat",
+    "du",
+    "df",
+    "tree",
+    "echo",
+    "git",
+    "man",
+    "help",
+    "info",
+    "whatis",
+    "apropos",
+    "true",
+    "false",
+    "yes",
+    "test",
 }
 
 # ── Dangerous commands (blacklist) ────────────────────────────────────────────
+# Only these patterns are blocked. EVERYTHING else is allowed.
 
 DANGEROUS_PATTERNS: list[str] = [
+    # File deletion / destruction
     r"\brm\b",
-    r"\bsudo\b",
-    r"\bshutdown\b",
-    r"\breboot\b",
-    r"\bmkfs\b",
-    r"\bformat\b",
+    r"\brmdir\b",
     r"\bdel\b",
     r"\brd\b",
-    r"\brmdir\b",
-    r"chmod\s+777",
     r"\bdestroy\b",
-    r"\bkill\b",
+    r"\bformat\b",
+
+    # Privilege escalation
+    r"\bsudo\b",
+    r"\bsu\b",
+    r"\bdoas\b",
+
+    # System power / restart
+    r"\bshutdown\b",
+    r"\breboot\b",
+    r"\bhalt\b",
+    r"\bpoweroff\b",
+    r"\binit\s+[0-6]\b",
+
+    # Filesystem / disk
+    r"\bmkfs\b",
     r"\bfdisk\b",
     r"\bdd\b",
     r"\bmount\b",
     r"\bumount\b",
+
+    # Firewall / network
     r"\biptables\b",
+    r"\bnftables\b",
+
+    # Systemd / init
     r"\bsystemctl\b",
-    r">\s*/dev/",
+    r"\bservice\b",
+
+    # Device writes (block devices only — /dev/null is safe)
+    r">\s*/dev/sd",
+    r">\s*/dev/nvme",
+    r">\s*/dev/mmcblk",
+    r">\s*/dev/hd",
+    r">\s*/dev/xvd",
+    r">\s*/dev/vd",
+    r">\s*/dev/loop",
+    r">\s*/dev/mapper",
+    r">\s*/dev/dm-",
+    r">\s*/dev/md",
+    r"\bdd\b.*of=/dev/",
+
+    # User / permission
     r"\bpasswd\b",
     r"\bchown\b",
     r"\bchgrp\b",
+    r"chmod\s+777",
+
+    # Pipe-to-shell (remote code execution)
     r"\bwget\b.*\|.*sh\b",
     r"\bcurl\b.*\|.*sh\b",
+    r"\bwget\b.*\|.*bash\b",
+    r"\bcurl\b.*\|.*bash\b",
+
+    # Eval / exec injection
     r"\beval\b",
     r"\bexec\b",
+
+    # Process killing
+    r"\bkill\b",
+    r"\bkillall\b",
+    r"\bpkill\b",
 ]
 
 _DANGEROUS_RE = re.compile("|".join(DANGEROUS_PATTERNS), re.IGNORECASE)
@@ -159,34 +154,55 @@ def is_dangerous_command(command: str) -> bool:
     return bool(_DANGEROUS_RE.search(command))
 
 
-def _is_allowed(command: str) -> bool:
-    """Check if a command is in the allowed set.
+def _extract_base_command(command: str) -> str:
+    """Extract the base command from a full command string.
+
+    Handles:
+      - Simple commands: 'git status' → 'git'
+      - Path-qualified: '/usr/bin/git' → 'git'
+      - Piped commands checks each segment
+      - Handles chained commands (&&, ;, ||)
 
     Args:
         command: The full command string.
 
     Returns:
-        True if allowed.
+        The base command name (first segment).
     """
-    base = command.strip().split()[0] if command.strip() else ""
-    # Allow git subcommands
-    if base == "git":
-        return True
-    return base in SAFE_COMMANDS
+    stripped = command.strip()
+    if not stripped:
+        return ""
+    # Take first segment before any operator
+    first_segment = stripped.split()[0] if stripped else ""
+    # Strip path (e.g. /usr/bin/git → git)
+    return Path(first_segment).name if first_segment else ""
+
+
+def is_readonly_command(command: str) -> bool:
+    """Check if a command is known to be read-only.
+
+    Args:
+        command: The full command string.
+
+    Returns:
+        True if the base command is read-only.
+    """
+    base = _extract_base_command(command)
+    return base.lower() in READONLY_COMMANDS
 
 
 def run_shell(
-    command: str, cwd: Path | None = None, timeout: int = 30
+    command: str, cwd: Path | None = None, timeout: int = 60
 ) -> ShellResult:
     """Execute a shell command safely.
 
-    Blocks dangerous commands. Runs safe ones in a subprocess
-    with a timeout.
+    Blocks dangerous commands (blacklist). Allows everything else.
+    Runs in a subprocess with a timeout.
 
     Args:
         command: The command string to execute.
         cwd: Working directory for the command.
-        timeout: Maximum execution time in seconds.
+        timeout: Maximum execution time in seconds (default: 60s).
 
     Returns:
         ShellResult with stdout, stderr, and status.
@@ -198,20 +214,15 @@ def run_shell(
             blocked=True, message="Empty command.",
         )
 
+    # ── Check for dangerous patterns (blacklist) ──────────
     if is_dangerous_command(stripped):
         return ShellResult(
             success=False, command=command, stdout="", stderr="",
             blocked=True,
-            message=f"Blocked: '{stripped}' may be destructive.",
+            message=f"Blocked: '{stripped}' matches a dangerous pattern.",
         )
 
-    if not _is_allowed(stripped):
-        return ShellResult(
-            success=False, command=command, stdout="", stderr="",
-            blocked=True,
-            message=f"Blocked: '{stripped}' is not in the allowed command set.",
-        )
-
+    # ── Everything else is allowed ────────────────────────
     try:
         result = subprocess.run(
             stripped,

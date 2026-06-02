@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "haney"
-version = "0.1.0"
+version = "0.1.1"
 description = "Terminal-based AI coding assistant inspired by Claude Code, OpenCode, Gemini CLI, and Pi Coding Agent."
 readme = "README.md"
 license = "MIT"
@@ -41,15 +41,15 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/sakthivel-t/haney"
-Repository = "https://github.com/sakthivel-t/haney"
-Issues = "https://github.com/sakthivel-t/haney/issues"
+Homepage = "https://github.com/sakthi-t/haneycli"
+Repository = "https://github.com/sakthi-t/haneycli"
+Issues = "https://github.com/sakthi-t/haneycli/issues"
 
 [project.scripts]
 haney = "haney.cli:app"
 
 [tool.setuptools]
-packages = ["haney", "haney.tools", "haney.ui"]
+packages = ["haney", "haney.tools", "haney.ui", "haney.mcp"]
 
 [tool.setuptools.package-data]
 haney = ["*.md"]

@@ -63,7 +63,15 @@ CONFIG_SCHEMA: dict[str, Any] = {
                 "token": None,
                 "env": {},
                 "env_token_key": "GITHUB_PERSONAL_ACCESS_TOKEN",
-            }
+            },
+            "stackoverflow": {
+                "enabled": False,
+                "command": "npx",
+                "args": ["-y", "mcp-remote", "https://mcp.stackoverflow.com"],
+                "token": None,
+                "env": {},
+                "env_token_key": "",
+            },
         },
     },
 
@@ -76,7 +84,7 @@ CONFIG_SCHEMA: dict[str, Any] = {
 }
 
 
-def bootstrap_config(cwd: Path | None = None, console=None) -> dict:
+def bootstrap_config(cwd: Path | None = None, console: "Console | None" = None) -> dict:
     """Ensure config.json has every key from the schema.
 
     Missing keys are added with their defaults. Existing values
@@ -96,6 +104,17 @@ def bootstrap_config(cwd: Path | None = None, console=None) -> dict:
         if key not in config:
             config[key] = default
             added.append(key)
+
+    # ── Handle nested MCP server defaults ─────────────────
+    if "mcp" in config and isinstance(config["mcp"], dict):
+        default_mcp = CONFIG_SCHEMA.get("mcp", {})
+        default_servers = default_mcp.get("servers", {})
+        if "servers" not in config["mcp"]:
+            config["mcp"]["servers"] = {}
+        for srv_name, srv_default in default_servers.items():
+            if srv_name not in config["mcp"]["servers"]:
+                config["mcp"]["servers"][srv_name] = dict(srv_default)
+                added.append(f"mcp.servers.{srv_name}")
 
     if added and console:
         console.print(

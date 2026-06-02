@@ -1349,7 +1349,8 @@ def cmd_mcp_login(console: Console, args: list[str]) -> None:
     """Authenticate with an MCP server.
 
     Usage: /mcp login <server>
-    Currently supports: github (OAuth device flow or PAT paste)
+    Currently supports: github (OAuth device flow or PAT paste),
+                        stackoverflow (browser-based OAuth via mcp-remote)
     """
     if not args:
         console.print("[yellow]Usage:[/yellow] /mcp login <server>")
@@ -1361,11 +1362,15 @@ def cmd_mcp_login(console: Console, args: list[str]) -> None:
 
     if server_name == "github":
         _cmd_mcp_login_github(console)
+    elif server_name == "stackoverflow":
+        _cmd_mcp_login_stackoverflow(console)
     else:
         cfg = get_server_config(server_name)
         if cfg is None:
             console.print(f"[red]Unknown MCP server:[/red] {server_name}")
-            console.print("[dim]Available servers: github[/dim]")
+            console.print(
+                "[dim]Available servers: github, stackoverflow[/dim]"
+            )
             return
 
         console.print(
@@ -1450,6 +1455,62 @@ def _cmd_mcp_login_github(console: Console) -> None:
     console.print("[dim]Token stored in .haney/config.json[/dim]")
     console.print()
     console.print("[dim]Next: use [bold]/mcp connect github[/bold] to start the GitHub MCP server.[/dim]")
+
+
+def _cmd_mcp_login_stackoverflow(console: Console) -> None:
+    """Handle Stack Overflow MCP authentication.
+
+    Stack Overflow MCP uses browser-based OAuth via mcp-remote.
+    No token needs to be stored — authentication happens when
+    the connection is established and mcp-remote opens the browser.
+    """
+    cfg = load_config(Path.cwd())
+    so_cfg = cfg.get("mcp", {}).get("servers", {}).get("stackoverflow", {})
+
+    console.print()
+    console.print("[bold]Stack Overflow MCP Authentication[/bold]")
+    console.print()
+    console.print(
+        "Stack Overflow MCP uses [bold cyan]browser-based OAuth[/bold cyan] "
+        "via [dim]mcp-remote[/dim]."
+    )
+    console.print()
+    console.print(
+        "  [bold]1.[/bold] When you connect, [dim]mcp-remote[/dim] will "
+        "open your browser automatically."
+    )
+    console.print(
+        "  [bold]2.[/bold] Log in with your Stack Overflow account."
+    )
+    console.print(
+        "  [bold]3.[/bold] Authorize the MCP client — no token to paste."
+    )
+    console.print()
+    console.print(
+        "[dim]Note: Limited to 100 calls/day per user during beta.[/dim]"
+    )
+    console.print()
+
+    # Enable the server config
+    if "mcp" not in cfg:
+        cfg["mcp"] = {}
+    if "servers" not in cfg["mcp"]:
+        cfg["mcp"]["servers"] = {}
+    if "stackoverflow" not in cfg["mcp"]["servers"]:
+        cfg["mcp"]["servers"]["stackoverflow"] = {}
+    cfg["mcp"]["servers"]["stackoverflow"]["enabled"] = True
+    cfg["mcp"]["enabled"] = True
+    save_config(cfg, Path.cwd())
+
+    console.print("[bold green]✓[/bold green] Stack Overflow MCP enabled.")
+    console.print()
+    console.print(
+        "[dim]Next: use [bold]/mcp connect stackoverflow[/bold] "
+        "to start the Stack Overflow MCP server.[/dim]"
+    )
+    console.print(
+        "[dim]Your browser will open for Stack Overflow authentication.[/dim]"
+    )
 
 
 def _mcp_github_oauth_flow(console: Console) -> str | None:
@@ -1551,7 +1612,7 @@ def cmd_mcp_connect(console: Console, args: list[str]) -> None:
 
     if not args:
         console.print("[yellow]Usage:[/yellow] /mcp connect <server>")
-        console.print("[dim]Available: github[/dim]")
+        console.print("[dim]Available: github, stackoverflow[/dim]")
         return
 
     server_name = args[0].lower().strip()
@@ -1613,6 +1674,22 @@ def cmd_mcp_connect(console: Console, args: list[str]) -> None:
             )
             return
         console.print(f"[dim]Found npx: {npx_path}[/dim]")
+
+    # ── Stack Overflow: browser-based OAuth ──────────────────
+    if server_name == "stackoverflow":
+        console.print()
+        console.print(
+            "[bold cyan]Stack Overflow MCP uses browser-based OAuth.[/bold cyan]"
+        )
+        console.print(
+            "[dim]A browser window will open for you to log in to "
+            "Stack Overflow.[/dim]"
+        )
+        console.print(
+            "[dim]After authentication, the MCP server will start.[/dim]"
+        )
+        console.print()
+
 
     try:
         server = _mcp_mgr.connect(server_name, run_cfg)
