@@ -48,6 +48,10 @@ from haney.permission_manager import (
     VALID_MODES as PERMISSION_MODES,
     PermissionManager,
 )
+from haney.mcp.server_manager import MCPServerManager
+from haney.mcp.github_oauth import GitHubOAuth, GitHubOAuthError
+from haney.mcp.server_configs import get_server_config, MCP_SERVERS
+from haney.providers import load_config, save_config
 
 if TYPE_CHECKING:
     from haney.llm import ChatSession
@@ -109,6 +113,13 @@ def cmd_help(console: Console, args: list[str]) -> None:
         ("/mode", "Show current execution mode"),
         # Permission
         ("/permission [ask|save|auto]", "Set approval mode"),
+        # MCP
+        ("/mcp login <server>", "Authenticate with an MCP server"),
+        ("/mcp logout <server>", "Clear MCP credentials"),
+        ("/mcp connect <server>", "Connect to an MCP server"),
+        ("/mcp disconnect [server]", "Disconnect MCP server(s)"),
+        ("/mcp status", "Show MCP connection status"),
+        ("/mcp servers", "List available MCP servers"),
     ]
 
     table = Table(title="Available Commands", border_style="blue", title_justify="left")
@@ -1256,6 +1267,491 @@ def cmd_permission(console: Console, args: list[str]) -> None:
         console.print("[dim]Every modifying action requires confirmation.[/dim]")
 
 
+# ── MCP Commands ───────────────────────────────────────────────────────────────
+
+_mcp_mgr: MCPServerManager | None = None
+
+
+def set_mcp_manager(mgr: MCPServerManager) -> None:
+    """Set the shared MCP manager. Called by chat.py."""
+    global _mcp_mgr
+    _mcp_mgr = mgr
+
+
+def cmd_mcp(console: Console, args: list[str]) -> None:
+    """Manage MCP servers and authentication.
+
+    Usage:
+        /mcp login <server>     — Authenticate (OAuth or PAT)
+        /mcp logout <server>    — Clear stored credentials
+        /mcp connect <server>   — Connect to an MCP server
+        /mcp disconnect <server> — Disconnect from an MCP server
+        /mcp status             — Show connected servers and tools
+        /mcp servers            — List available MCP servers
+    """
+    if not args:
+        console.print("[yellow]Usage:[/yellow] /mcp <login|logout|connect|disconnect|status|servers> [server]")
+        console.print()
+        cmd_mcp_status(console, [])
+        return
+
+    sub = args[0].lower().strip()
+
+    if sub == "login":
+        cmd_mcp_login(console, args[1:])
+    elif sub == "logout":
+        cmd_mcp_logout(console, args[1:])
+    elif sub == "connect":
+        cmd_mcp_connect(console, args[1:])
+    elif sub == "disconnect":
+        cmd_mcp_disconnect(console, args[1:])
+    elif sub in ("status", "list"):
+        cmd_mcp_status(console, args[1:])
+    elif sub == "servers":
+        cmd_mcp_servers(console, args[1:])
+    else:
+        console.print(f"[red]Unknown MCP sub-command:[/red] {sub}")
+        console.print("[dim]Try: /mcp login github, /mcp connect github, /mcp status[/dim]")
+
+
+def cmd_mcp_servers(console: Console, args: list[str]) -> None:
+    """List available MCP server configurations."""
+    table = Table(
+        title="Available MCP Servers",
+        border_style="cyan",
+        title_justify="left",
+    )
+    table.add_column("Server", style="bold cyan", no_wrap=True)
+    table.add_column("Description", style="dim")
+    table.add_column("Requires", style="yellow")
+
+    for name, cfg in MCP_SERVERS.items():
+        requires = []
+        if cfg.requires_node:
+            requires.append("Node.js / npx")
+        if cfg.requires_auth:
+            requires.append("Auth token")
+        table.add_row(name, cfg.description, ", ".join(requires) if requires else "none")
+
+    console.print(table)
+
+    if _mcp_mgr is not None:
+        connected = _mcp_mgr.get_connected_servers()
+        if connected:
+            console.print(f"\n[dim]Connected: {', '.join(connected)}[/dim]")
+        else:
+            console.print("\n[dim]No servers connected.[/dim]")
+
+    console.print("\n[dim]Use /mcp login <server> to authenticate first, then /mcp connect <server>.[/dim]")
+
+
+def cmd_mcp_login(console: Console, args: list[str]) -> None:
+    """Authenticate with an MCP server.
+
+    Usage: /mcp login <server>
+    Currently supports: github (OAuth device flow or PAT paste)
+    """
+    if not args:
+        console.print("[yellow]Usage:[/yellow] /mcp login <server>")
+        console.print()
+        cmd_mcp_servers(console, [])
+        return
+
+    server_name = args[0].lower().strip()
+
+    if server_name == "github":
+        _cmd_mcp_login_github(console)
+    else:
+        cfg = get_server_config(server_name)
+        if cfg is None:
+            console.print(f"[red]Unknown MCP server:[/red] {server_name}")
+            console.print("[dim]Available servers: github[/dim]")
+            return
+
+        console.print(
+            f"[yellow]OAuth login not yet available for {cfg.display_name}.[/yellow]"
+        )
+        console.print(
+            f"[dim]To connect, set {cfg.env_token_key} in your environment "
+            f"or configure manually in .haney/config.json[/dim]"
+        )
+
+
+def _cmd_mcp_login_github(console: Console) -> None:
+    """Handle GitHub authentication for MCP — OAuth device flow or PAT paste."""
+    cfg = load_config(Path.cwd())
+    github_cfg = cfg.get("mcp", {}).get("servers", {}).get("github", {})
+
+    # Check if already have a token
+    existing_token = github_cfg.get("token")
+    if existing_token:
+        try:
+            user_info = GitHubOAuth.check_token(existing_token)
+            login_name = user_info.get("login", "unknown")
+            console.print(
+                f"[yellow]Already authenticated as [bold]{login_name}[/bold] "
+                f"on GitHub.[/yellow]"
+            )
+            if not Confirm.ask("Re-authenticate?", default=False):
+                console.print("[dim]Keeping existing GitHub token.[/dim]")
+                return
+        except GitHubOAuthError:
+            console.print("[yellow]Existing token appears invalid. Starting re-auth…[/yellow]")
+
+    # ── Choose auth method ───────────────────────────────────────────
+    console.print()
+    console.print("[bold]Choose authentication method:[/bold]")
+    console.print("  [bold cyan]1.[/bold cyan] GitHub OAuth device flow")
+    console.print("  [bold cyan]2.[/bold cyan] Paste a Personal Access Token (classic or fine-grained)")
+    console.print()
+
+    choice = Prompt.ask(
+        "Enter choice",
+        choices=["1", "2"],
+        default="1",
+    )
+
+    if choice == "1":
+        token = _mcp_github_oauth_flow(console)
+        if token is None:
+            return
+    else:
+        token = _mcp_github_pat_flow(console)
+        if token is None:
+            return
+
+    # Verify the token
+    console.print()
+    console.print("[dim]Verifying token…[/dim]")
+    try:
+        user_info = GitHubOAuth.check_token(token)
+        login_name = user_info.get("login", "unknown")
+    except GitHubOAuthError as exc:
+        console.print(f"[red]Token verification failed:[/red] {exc}")
+        return
+
+    # Store in config
+    if "mcp" not in cfg:
+        cfg["mcp"] = {}
+    if "servers" not in cfg["mcp"]:
+        cfg["mcp"]["servers"] = {}
+    if "github" not in cfg["mcp"]["servers"]:
+        cfg["mcp"]["servers"]["github"] = {}
+
+    cfg["mcp"]["servers"]["github"]["token"] = token
+    cfg["mcp"]["servers"]["github"]["enabled"] = True
+    cfg["mcp"]["enabled"] = True
+    save_config(cfg, Path.cwd())
+
+    console.print()
+    console.print(
+        f"[bold green]✓[/bold green] Authenticated as [bold]{login_name}[/bold] on GitHub"
+    )
+    console.print("[dim]Token stored in .haney/config.json[/dim]")
+    console.print()
+    console.print("[dim]Next: use [bold]/mcp connect github[/bold] to start the GitHub MCP server.[/dim]")
+
+
+def _mcp_github_oauth_flow(console: Console) -> str | None:
+    """Run the GitHub OAuth device flow.
+
+    Returns:
+        Access token string, or None if cancelled/failed.
+    """
+    try:
+        oauth = GitHubOAuth(console=console)
+        token = oauth.login()
+    except GitHubOAuthError as exc:
+        console.print(f"[red]GitHub OAuth failed:[/red] {exc}")
+        return None
+    return token
+
+
+def _mcp_github_pat_flow(console: Console) -> str | None:
+    """Prompt the user to paste a GitHub Personal Access Token.
+
+    Returns:
+        Validated token string, or None if cancelled.
+    """
+    console.print()
+    console.print("[bold]GitHub Personal Access Token[/bold]")
+    console.print(
+        "[dim]Generate one at: "
+        "[underline]https://github.com/settings/tokens[/underline][/dim]"
+    )
+    console.print()
+    console.print("[dim]Classic tokens need: [bold]repo[/bold], [bold]read:user[/bold] scopes[/dim]")
+    console.print("[dim]Fine-grained tokens: read/write access to repositories and user[/dim]")
+    console.print()
+
+    token = Prompt.ask(
+        "Paste your GitHub PAT (hidden input)",
+        password=True,
+    )
+
+    if not token or not token.strip():
+        console.print("[red]No token provided. Login cancelled.[/red]")
+        return None
+
+    token = token.strip()
+
+    # Quick format check
+    if not token.startswith(("ghp_", "github_pat_", "gho_")):
+        console.print()
+        console.print(
+            "[yellow]⚠ Token doesn't match expected GitHub PAT format "
+            "(ghp_..., github_pat_..., gho_...).[/yellow]"
+        )
+        if not Confirm.ask("Use this token anyway?", default=False):
+            console.print("[dim]Login cancelled.[/dim]")
+            return None
+
+    return token
+
+
+def cmd_mcp_logout(console: Console, args: list[str]) -> None:
+    """Clear stored credentials for an MCP server.
+
+    Usage: /mcp logout <server>
+    """
+    if not args:
+        console.print("[yellow]Usage:[/yellow] /mcp logout <server>")
+        return
+
+    server_name = args[0].lower().strip()
+
+    # Disconnect first if connected
+    if _mcp_mgr is not None and _mcp_mgr.is_connected(server_name):
+        _mcp_mgr.disconnect(server_name)
+        console.print(f"[dim]Disconnected from {server_name} MCP server.[/dim]")
+
+    # Clear from config
+    cfg = load_config(Path.cwd())
+    servers = cfg.get("mcp", {}).get("servers", {})
+    if server_name in servers:
+        srv = servers[server_name]
+        srv.pop("token", None)
+        srv["enabled"] = False
+        cfg["mcp"]["servers"][server_name] = srv
+        save_config(cfg, Path.cwd())
+
+    console.print(f"[bold green]✓[/bold green] Cleared credentials for [bold]{server_name}[/bold]")
+    console.print("[dim]Run /mcp login <server> to re-authenticate.[/dim]")
+
+
+def cmd_mcp_connect(console: Console, args: list[str]) -> None:
+    """Connect to an MCP server.
+
+    Usage: /mcp connect <server>
+    Requires prior authentication via /mcp login <server>.
+    """
+    if _mcp_mgr is None:
+        console.print("[red]MCP manager not available. Restart Haney.[/red]")
+        return
+
+    if not args:
+        console.print("[yellow]Usage:[/yellow] /mcp connect <server>")
+        console.print("[dim]Available: github[/dim]")
+        return
+
+    server_name = args[0].lower().strip()
+
+    if _mcp_mgr.is_connected(server_name):
+        tools = _mcp_mgr.get_tool_count()
+        console.print(
+            f"[yellow]{server_name} is already connected with {tools} tool(s).[/yellow]"
+        )
+        return
+
+    cfg = load_config(Path.cwd())
+    server_cfg_raw = cfg.get("mcp", {}).get("servers", {}).get(server_name, {})
+    srv_config = get_server_config(server_name)
+
+    if srv_config is None and not server_cfg_raw:
+        console.print(f"[red]Unknown MCP server:[/red] {server_name}")
+        return
+
+    # Merge predefined config with user config
+    run_cfg: dict = {
+        "command": server_cfg_raw.get("command", srv_config.command if srv_config else ""),
+        "args": server_cfg_raw.get("args", srv_config.args if srv_config else []),
+        "env": dict(server_cfg_raw.get("env", {})),
+        "token": server_cfg_raw.get("token"),
+        "env_token_key": server_cfg_raw.get(
+            "env_token_key",
+            srv_config.env_token_key if srv_config else "",
+        ),
+    }
+
+    token = run_cfg.get("token")
+    token_key = run_cfg.get("env_token_key", "")
+
+    if not token and srv_config and srv_config.requires_auth:
+        # Check environment variable
+        import os
+        env_token = os.environ.get(token_key) if token_key else None
+        if env_token:
+            run_cfg["token"] = env_token
+        else:
+            console.print(
+                f"[red]No token configured for {server_name}.[/red]"
+            )
+            console.print(
+                f"[dim]Run /mcp login {server_name} to authenticate, or "
+                f"set {token_key} in your environment.[/dim]"
+            )
+            return
+
+    if srv_config and srv_config.requires_node:
+        # Check if npx / node is available
+        import shutil
+        npx_path = shutil.which("npx")
+        if npx_path is None:
+            console.print(
+                "[red]npx is required but not found. Install Node.js: "
+                "https://nodejs.org/[/red]"
+            )
+            return
+        console.print(f"[dim]Found npx: {npx_path}[/dim]")
+
+    try:
+        server = _mcp_mgr.connect(server_name, run_cfg)
+    except Exception as exc:
+        console.print(f"[red]Failed to connect to {server_name}: {exc}[/red]")
+        return
+
+    # Update config to remember this server is enabled
+    if "mcp" not in cfg:
+        cfg["mcp"] = {"enabled": True, "servers": {}}
+    if "servers" not in cfg["mcp"]:
+        cfg["mcp"]["servers"] = {}
+    if server_name not in cfg["mcp"]["servers"]:
+        cfg["mcp"]["servers"][server_name] = {}
+    cfg["mcp"]["enabled"] = True
+    cfg["mcp"]["servers"][server_name]["enabled"] = True
+    save_config(cfg, Path.cwd())
+
+    tools_count = len(server.tool_defs)
+    console.print(
+        f"[bold green]✓[/bold green] Connected to {server_name} MCP — "
+        f"{tools_count} tool(s) available."
+    )
+
+
+def cmd_mcp_disconnect(console: Console, args: list[str]) -> None:
+    """Disconnect from an MCP server.
+
+    Usage: /mcp disconnect <server>
+    """
+    if _mcp_mgr is None:
+        console.print("[red]MCP manager not available.[/red]")
+        return
+
+    if not args:
+        # Disconnect all
+        connected = _mcp_mgr.get_connected_servers()
+        if not connected:
+            console.print("[yellow]No MCP servers are connected.[/yellow]")
+            return
+        for name in list(connected):
+            _mcp_mgr.disconnect(name)
+            console.print(f"[dim]Disconnected from {name}.[/dim]")
+        console.print("[bold green]✓[/bold green] All MCP servers disconnected.")
+        return
+
+    server_name = args[0].lower().strip()
+
+    if not _mcp_mgr.is_connected(server_name):
+        console.print(f"[yellow]{server_name} is not connected.[/yellow]")
+        return
+
+    _mcp_mgr.disconnect(server_name)
+    console.print(f"[bold green]✓[/bold green] Disconnected from [bold]{server_name}[/bold] MCP.")
+
+    # Update config
+    cfg = load_config(Path.cwd())
+    servers = cfg.get("mcp", {}).get("servers", {})
+    if server_name in servers:
+        servers[server_name]["enabled"] = False
+        save_config(cfg, Path.cwd())
+
+
+def cmd_mcp_status(console: Console, args: list[str]) -> None:
+    """Show MCP connection status and available tools.
+
+    Usage: /mcp status
+    """
+    if _mcp_mgr is None:
+        console.print("[yellow]MCP manager not initialised.[/yellow]")
+        return
+
+    cfg = load_config(Path.cwd())
+    mcp_cfg = cfg.get("mcp", {})
+    mcp_enabled = mcp_cfg.get("enabled", False)
+
+    table = Table(
+        title="MCP Status",
+        border_style="magenta",
+        title_justify="left",
+    )
+    table.add_column("Setting", style="bold", no_wrap=True)
+    table.add_column("Value", style="cyan")
+
+    table.add_row(
+        "Global",
+        "[green]Enabled[/green]" if mcp_enabled else "[yellow]Disabled[/yellow]",
+    )
+
+    connected = _mcp_mgr.get_connected_servers()
+    table.add_row("Connected Servers", ", ".join(connected) if connected else "[dim]none[/dim]")
+    table.add_row("Total MCP Tools", str(_mcp_mgr.get_tool_count()))
+
+    console.print(table)
+
+    # Show per-server details
+    servers_cfg = mcp_cfg.get("servers", {})
+    if servers_cfg:
+        console.print()
+        detail_table = Table(
+            title="MCP Servers",
+            border_style="cyan",
+            title_justify="left",
+        )
+        detail_table.add_column("Server", style="bold cyan")
+        detail_table.add_column("Auth", style="dim")
+        detail_table.add_column("Connected", style="bold")
+        detail_table.add_column("Tools", style="cyan", justify="right")
+
+        for name, srv_cfg in servers_cfg.items():
+            if not isinstance(srv_cfg, dict):
+                continue
+            has_token = bool(srv_cfg.get("token"))
+            is_conn = name in connected
+            tool_count = 0
+
+            # Count tools if connected
+            if is_conn and _mcp_mgr._servers.get(name):
+                tool_count = len(_mcp_mgr._servers[name].tool_defs)
+
+            detail_table.add_row(
+                name,
+                "[green]✓[/green]" if has_token else "[yellow]✗[/yellow]",
+                "[green]Yes[/green]" if is_conn else "[dim]No[/dim]",
+                str(tool_count) if is_conn else "—",
+            )
+
+        console.print(detail_table)
+
+    # Show available but not configured
+    configured = set(servers_cfg.keys()) if servers_cfg else set()
+    unconfigured = set(MCP_SERVERS.keys()) - configured
+    if unconfigured:
+        console.print(
+            f"\n[dim]Not configured: {', '.join(sorted(unconfigured))}. "
+            "Use /mcp login <server> to set up.[/dim]"
+        )
+
+
 # ── Command Registry ───────────────────────────────────────────────────────────
 
 def get_commands() -> dict[str, Command]:
@@ -1301,6 +1797,8 @@ def get_commands() -> dict[str, Command]:
         "/mode": Command(name="/mode", description="Show current mode", handler=cmd_mode_show),
         # Permission
         "/permission": Command(name="/permission", description="Show/set permission mode", handler=cmd_permission),
+        # MCP
+        "/mcp": Command(name="/mcp", description="Manage MCP servers", handler=cmd_mcp),
     }
 
 

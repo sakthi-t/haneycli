@@ -11,13 +11,20 @@ from pathlib import Path
 
 from rich.console import Console
 
-from haney.commands import dispatch, set_context_manager, set_session_manager, set_perm_manager
+from haney.commands import (
+    dispatch,
+    set_context_manager,
+    set_session_manager,
+    set_perm_manager,
+    set_mcp_manager,
+)
 from haney.llm import ChatSession
 from haney.project_context import ProjectContextManager
 from haney.providers import is_logged_in, is_web_search_enabled
 from haney.session_manager import SessionManager
 from haney.config_bootstrap import bootstrap_config
 from haney.permission_manager import PermissionManager
+from haney.mcp.server_manager import MCPServerManager
 from haney.ui.composer import Composer
 
 
@@ -47,6 +54,10 @@ def start_chat(console: Console) -> None:
     ctx = ProjectContextManager()
     set_context_manager(ctx)
 
+    # MCP server manager — shared across session and commands
+    mcp_mgr = MCPServerManager(cwd=cwd, console=console)
+    set_mcp_manager(mcp_mgr)
+
     # Composer for styled input
     composer = Composer(console, session_mgr, cwd)
 
@@ -57,7 +68,13 @@ def start_chat(console: Console) -> None:
     )
     console.print()
 
-    chat = ChatSession(console, project_ctx=ctx, session_mgr=session_mgr, perm_mgr=perm_mgr)
+    chat = ChatSession(
+        console,
+        project_ctx=ctx,
+        session_mgr=session_mgr,
+        perm_mgr=perm_mgr,
+        mcp_mgr=mcp_mgr,
+    )
 
     try:
         while True:
@@ -73,6 +90,8 @@ def start_chat(console: Console) -> None:
             dispatch(user_input, console, chat)
             console.print()
     finally:
+        # Shut down MCP servers
+        mcp_mgr.shutdown_all()
         # Save session on exit
         saved = session_mgr.save()
         if saved:

@@ -29,6 +29,8 @@ from haney.mode_manager import guard_tool, get_mode
 from haney.providers import load_config
 from haney.permission_manager import PermissionManager
 
+# MCP tools have the prefix "mcp__"
+MCP_TOOL_PREFIX = "mcp__"
 
 # ── Tool definitions for LiteLLM ──────────────────────────────────────────────
 
@@ -195,29 +197,47 @@ class ToolManager:
 
     Integrates with LiteLLM tool calling — provides tool definitions,
     executes requested tools, and formats results for the LLM.
+    Supports MCP (Model Context Protocol) tools via MCPServerManager.
     """
 
-    def __init__(self, console: Console, cwd: Path | None = None) -> None:
+    def __init__(
+        self, console: Console, cwd: Path | None = None, mcp_manager=None
+    ) -> None:
         """Initialise the tool manager.
 
         Args:
             console: Rich Console for approval prompts.
             cwd: Project root directory. Defaults to current.
+            mcp_manager: Optional MCPServerManager for MCP tools.
         """
         self.console = console
         self.cwd = (cwd or Path.cwd()).resolve()
         self.permissions = PermissionManager(self.cwd)
+        self.mcp_manager = mcp_manager
 
     @property
     def tool_definitions(self) -> list[dict[str, Any]]:
         """Return tool schemas, filtered by current mode.
 
         In PLAN mode, only read-only tools are exposed to the LLM.
-        In EDIT mode, all tools are available.
+        In EDIT mode, all tools are available (including MCP tools).
         """
-        if get_mode(self.cwd) == "plan":
-            return [t for t in TOOL_DEFINITIONS if t["function"]["name"] in READ_ONLY_TOOLS]
-        return TOOL_DEFINITIONS
+        mode = get_mode(self.cwd)
+
+        if mode == "plan":
+            base = [t for t in TOOL_DEFINITIONS if t["function"]["name"] in READ_ONLY_TOOLS]
+        else:
+            base = list(TOOL_DEFINITIONS)
+
+        # Add MCP tools (treated as write tools, only in EDIT mode)
+        if mode == "edit" and self.mcp_manager is not None:
+            try:
+                mcp_tools = self.mcp_manager.get_all_tool_definitions()
+                base.extend(mcp_tools)
+            except Exception:
+                pass  # MCP tools are optional; don't break on errors
+
+        return base
 
     def execute_tool_call(
         self, tool_name: str, arguments: dict[str, Any]
@@ -231,6 +251,10 @@ class ToolManager:
         Returns:
             A human-readable result string for the LLM.
         """
+        # ── Route MCP tools ──────────────────────────────────
+        if tool_name.startswith(MCP_TOOL_PREFIX):
+            return self._execute_mcp_tool(tool_name, arguments)
+
         # ── Find handler ──────────────────────────────────────
         handler = _TOOL_HANDLERS.get(tool_name)
         if handler is None:
@@ -259,6 +283,38 @@ class ToolManager:
             return f"Error executing {tool_name}: {exc}"
 
         return self._format_result(tool_name, result)
+
+    def _execute_mcp_tool(
+        self, tool_name: str, arguments: dict[str, Any]
+    ) -> str:
+        """Execute an MCP tool through the MCP server manager.
+
+        Args:
+            tool_name: Namespaced MCP tool name (e.g. 'mcp__github__create_issue').
+            arguments: Tool arguments.
+
+        Returns:
+            Result string.
+        """
+        if self.mcp_manager is None:
+            return f"Error: MCP is not configured. No MCP manager available."
+
+        # MCP tools are write tools — check mode
+        block_msg = guard_tool("run_shell_command", self.cwd)
+        if block_msg:
+            return block_msg
+
+        # Permission check
+        if self.permissions.needs_approval("run_shell_command"):
+            if not self._request_approval(tool_name, arguments):
+                return f"MCP tool '{tool_name}' was declined by the user."
+            if self.permissions.mode == "save":
+                self.permissions.approve_session("run_shell_command")
+
+        try:
+            return self.mcp_manager.execute_tool(tool_name, arguments)
+        except Exception as exc:
+            return f"Error executing MCP tool '{tool_name}': {exc}"
 
     def _request_approval(
         self, tool_name: str, arguments: dict[str, Any]

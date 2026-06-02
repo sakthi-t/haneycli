@@ -364,6 +364,22 @@ When enabled, Haney searches Exa before each LLM call and injects results as con
 
 ---
 
+### MCP — Model Context Protocol
+
+Connect to MCP servers (like GitHub) for extended tool access. MCP tools integrate seamlessly with Haney's existing tool system and approval flow.
+
+```bash
+/mcp login github      # GitHub OAuth device flow
+/mcp connect github    # Start the GitHub MCP server
+/mcp status            # View connected servers and tools
+```
+
+GitHub MCP provides tools for repository management, issue tracking, PR review, file operations, and search — all namespaced as `mcp__github__<toolname>`.
+
+MCP servers run as subprocesses and communicate over stdio using JSON-RPC 2.0.
+
+---
+
 ## Configuration
 
 Haney is **configuration-driven**. Every operational limit, mode, and behavior is defined in `.haney/config.json` — nothing is hardcoded in source.
@@ -413,6 +429,17 @@ Missing keys are auto-populated with defaults on startup. `null` means unlimited
 | `/edit` | Switch to EDIT mode (tools enabled) |
 | `/mode` | Show current execution mode |
 | `/permission [ask\|save\|auto]` | Set approval mode |
+
+### MCP (Model Context Protocol)
+
+| Command | Description |
+|---|---|
+| `/mcp login <server>` | Authenticate with an MCP server (GitHub OAuth) |
+| `/mcp logout <server>` | Clear stored MCP credentials |
+| `/mcp connect <server>` | Connect to an MCP server |
+| `/mcp disconnect [server]` | Disconnect from MCP server(s) |
+| `/mcp status` | Show MCP status and connected tools |
+| `/mcp servers` | List available MCP servers |
 
 ### Project
 

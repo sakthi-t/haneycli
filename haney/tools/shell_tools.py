@@ -27,25 +27,75 @@ class ShellResult:
 # ── Safe commands (whitelist) ─────────────────────────────────────────────────
 
 SAFE_COMMANDS: set[str] = {
-    "pwd",
-    "ls",
-    "dir",
-    "cat",
-    "head",
-    "tail",
-    "wc",
-    "find",
-    "grep",
-    "echo",
-    "date",
-    "whoami",
-    "hostname",
-    "uname",
-    "env",
-    "printenv",
-    "which",
-    "whereis",
+    # ── Navigation / filesystem ─────────────────────────────
+    "pwd", "ls", "dir", "cd",
+    "cat", "head", "tail", "wc",
+    "find", "locate", "fd",
+    "grep", "rg", "ack", "ag",
+    "echo", "printf",
+    "touch", "mkdir", "cp", "mv",
+    "ln", "readlink", "realpath",
+    "tree", "du", "df", "stat", "file",
+
+    # ── Viewing / paging ───────────────────────────────────
+    "less", "more", "bat", "nl",
+
+    # ── System info ────────────────────────────────────────
+    "date", "whoami", "hostname", "uname",
+    "env", "printenv", "which", "whereis", "type",
+    "ps", "top", "htop", "uptime", "free",
+    "lsof", "fuser",
+
+    # ── Text processing ────────────────────────────────────
+    "sort", "uniq", "diff", "patch",
+    "cut", "tr", "sed", "awk",
+    "xargs", "tee", "basename", "dirname",
+    "shuf", "column", "paste", "join",
+    "fmt", "fold", "rev", "tac",
+
+    # ── Archiving / compression ────────────────────────────
+    "tar", "gzip", "gunzip", "zcat",
+    "zip", "unzip", "bzip2", "bunzip2",
+    "xz", "unxz", "zstd", "unzstd",
+
+    # ── Network / download ─────────────────────────────────
+    "curl", "wget",
+    "ping", "nslookup", "dig", "host",
+    "nc", "netstat", "ss",
+    "ssh-keygen", "gpg", "openssl",
+
+    # ── Version control ────────────────────────────────────
     "git",
+
+    # ── Shell builtins / helpers ───────────────────────────
+    "export", "alias", "unalias",
+    "source", "clear", "reset",
+
+    # ── Dev / build tools ──────────────────────────────────
+    "uv", "pip", "pip3", "python", "python3",
+    "node", "npm", "npx", "yarn", "pnpm", "bun",
+    "cargo", "rustc", "rustup",
+    "go", "gofmt",
+    "make", "cmake", "ninja", "meson",
+    "gcc", "g++", "clang", "clang++",
+    "javac", "java", "kotlin", "scala",
+    "dotnet", "nuget",
+    "docker", "podman",
+    "nix", "nix-shell", "nix-env",
+    "brew", "port", "apt", "apt-get", "dpkg", "rpm",
+
+    # ── Editors ────────────────────────────────────────────
+    "nano", "vim", "vi", "nvim", "code",
+    "emacs", "ed",
+
+    # ── Help / docs ────────────────────────────────────────
+    "man", "help", "info", "whatis", "apropos",
+
+    # ── Misc utilities ─────────────────────────────────────
+    "jq", "yq", "fzf", "peco",
+    "rsync", "scp", "sftp",
+    "watch", "crontab",
+    "yes", "true", "false", "test",
 }
 
 # Commands that are always safe regardless of args

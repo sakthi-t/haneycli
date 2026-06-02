@@ -40,6 +40,7 @@ from haney.session_manager import SessionManager
 from haney.thinking_manager import get_thinking_mode, get_completion_params
 from haney.mode_manager import get_mode
 from haney.permission_manager import PermissionManager
+from haney.mcp.server_manager import MCPServerManager
 
 
 class ChatSession:
@@ -57,6 +58,7 @@ class ChatSession:
         project_ctx: ProjectContextManager | None = None,
         session_mgr: SessionManager | None = None,
         perm_mgr: PermissionManager | None = None,
+        mcp_mgr: MCPServerManager | None = None,
     ) -> None:
         """Initialise a new chat session.
 
@@ -66,6 +68,7 @@ class ChatSession:
             project_ctx: ProjectContextManager.
             session_mgr: SessionManager for tracking.
             perm_mgr: PermissionManager for approval flow.
+            mcp_mgr: Optional MCPServerManager for MCP tools.
         """
         self.console = console
         self.cwd = cwd or Path.cwd()
@@ -79,6 +82,52 @@ class ChatSession:
         self.tool_ctx = ToolManager(console, self.cwd)
         if perm_mgr:
             self.tool_ctx.permissions = perm_mgr
+
+        # ── MCP integration ───────────────────────────────────
+        if mcp_mgr is None:
+            self._init_mcp()
+        else:
+            self.tool_ctx.mcp_manager = mcp_mgr
+
+    def _init_mcp(self) -> None:
+        """Initialise MCP servers if enabled in config.
+
+        Creates the MCPServerManager and connects to enabled servers.
+        Links the manager to the ToolManager for tool discovery.
+        """
+        cfg = load_config(self.cwd)
+        mcp_cfg = cfg.get("mcp", {})
+
+        if not mcp_cfg.get("enabled", False):
+            return
+
+        try:
+            mcp_mgr = MCPServerManager(cwd=self.cwd, console=self.console)
+        except Exception:
+            # MCP is optional; don't block startup
+            return
+
+        enabled_servers = mcp_cfg.get("servers", {})
+        connected = False
+
+        for srv_name, srv_cfg in enabled_servers.items():
+            if not isinstance(srv_cfg, dict):
+                continue
+            if not srv_cfg.get("enabled", False):
+                continue
+            if not srv_cfg.get("token") and not srv_cfg.get("env"):
+                continue  # No auth configured
+
+            try:
+                mcp_mgr.connect(srv_name, srv_cfg)
+                connected = True
+            except Exception as exc:
+                self.console.print(
+                    f"[yellow]MCP server '{srv_name}' failed to connect: {exc}[/yellow]"
+                )
+
+        if connected:
+            self.tool_ctx.mcp_manager = mcp_mgr
 
     @property
     def system_prompt(self) -> str:

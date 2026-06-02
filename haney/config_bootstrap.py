@@ -42,7 +42,7 @@ CONFIG_SCHEMA: dict[str, Any] = {
     "search": {},
 
     # ── Limits (null = unlimited) ─────────────────────────────
-    "max_tool_calls": 20,
+    "max_tool_calls": None,
     "max_attachment_tokens": 10000,
     "max_context_tokens": None,
 
@@ -51,6 +51,21 @@ CONFIG_SCHEMA: dict[str, Any] = {
     # "all"        — confirm every tool including reads
     # "none"       — never confirm (dangerous)
     "approval_mode": "write_only",
+
+    # ── MCP (Model Context Protocol) ────────────────────────
+    "mcp": {
+        "enabled": False,
+        "servers": {
+            "github": {
+                "enabled": False,
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-github"],
+                "token": None,
+                "env": {},
+                "env_token_key": "GITHUB_PERSONAL_ACCESS_TOKEN",
+            }
+        },
+    },
 
     # ── Comments (preserved for readability) ──────────────────
     "_comment": (

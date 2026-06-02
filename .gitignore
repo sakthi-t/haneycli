@@ -12,6 +12,8 @@ build/
 venv/
 env/
 
+.haney/
+
 # Environment files
 .env
 .env.*
@@ -28,9 +30,6 @@ env/
 .DS_Store
 Thumbs.db
 
-# Haney runtime — keep local, not committed
-.haney/
-
 # Project awareness files — local only
 plan.md
 memory.md
@@ -39,11 +38,11 @@ tasks.md
 architecture.md
 requirements.md
 
-# Session archives
-sessions/
+# Session archives (under .haney/)
+.haney/sessions/
 
-# Trash
-trash/
+# Trash (under .haney/)
+.haney/trash/
 
 # Testing & type checking
 .pytest_cache/
@@ -51,8 +50,3 @@ trash/
 .tox/
 .coverage
 htmlcov/
-
-# Build artifacts
-dist/
-build/
-*.egg-info/

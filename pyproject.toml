@@ -53,3 +53,8 @@ packages = ["haney", "haney.tools", "haney.ui"]
 
 [tool.setuptools.package-data]
 haney = ["*.md"]
+
+[tool.uv.workspace]
+members = [
+    "testhaney",
+]
