@@ -1,7 +1,8 @@
 """First-run setup wizard for Haney.
 
-Creates the .haney directory and default helper files when
-Haney runs for the first time in a project.
+Creates the .haney directory, project-root awareness files
+(plan.md, memory.md, sessions.md, help.md), and default
+infrastructure files when Haney runs for the first time.
 """
 
 from __future__ import annotations
@@ -137,8 +138,8 @@ def is_setup_complete(cwd: Path | None = None) -> bool:
 def run_setup(console: Console, cwd: Path | None = None) -> None:
     """Run the first-run setup wizard.
 
-    Prompts the user to create the .haney directory and default files.
-    If the user declines, Haney still starts without project files.
+    Prompts the user to create the .haney directory and default project
+    files. If the user declines, Haney still starts without them.
 
     Args:
         console: Rich Console instance for output.
@@ -147,7 +148,13 @@ def run_setup(console: Console, cwd: Path | None = None) -> None:
     target = (cwd or Path.cwd()) / HANEY_DIR
 
     welcome = Panel(
-        "Welcome to Haney.\n\nCreate project files?",
+        "Welcome to Haney.\n\n"
+        "This project works best with memory files.\n\n"
+        "Create the following files?\n\n"
+        "  @plan.md\n"
+        "  @memory.md\n"
+        "  @sessions.md\n"
+        "  @help.md",
         border_style="green",
         title="Setup",
         title_align="left",
@@ -160,13 +167,24 @@ def run_setup(console: Console, cwd: Path | None = None) -> None:
         console.print("[dim]Skipping project file creation.[/dim]")
         return
 
-    _create_project_files(target, console)
+    _create_project_files(cwd or Path.cwd(), target, console)
 
 
-def _create_project_files(haney_dir: Path, console: Console) -> None:
-    """Create the .haney directory and all default helper files.
+PLAN_MD_CONTENT = """# Project Plan
+
+<!-- Describe what this project does, its goals, and architecture. -->
+"""
+
+
+def _create_project_files(root_dir: Path, haney_dir: Path, console: Console) -> None:
+    """Create .haney/ and project-root files.
+
+    Infrastructure files (system.md, config.json) go into .haney/.
+    User-owned project files (plan.md, memory.md, sessions.md,
+    help.md) go into the project root.
 
     Args:
+        root_dir: Project root directory.
         haney_dir: Path to the .haney directory.
         console: Rich Console instance for output.
     """
@@ -176,32 +194,47 @@ def _create_project_files(haney_dir: Path, console: Console) -> None:
     try:
         haney_dir.mkdir(parents=True, exist_ok=True)
 
-        file_contents: dict[str, str] = {
+        # .haney/ files (Haney infrastructure)
+        haney_contents: dict[str, str] = {
             "system.md": SYSTEM_MD_CONTENT,
-            "memory.md": MEMORY_MD_CONTENT,
-            "sessions.md": SESSIONS_MD_CONTENT,
-            "help.md": HELP_MD_CONTENT,
         }
 
-        for filename, content in file_contents.items():
+        created: list[str] = []
+
+        for filename, content in haney_contents.items():
             filepath = haney_dir / filename
             filepath.write_text(content, encoding="utf-8")
+            created.append(f".haney/{filename}")
 
-        # Create config.json from the master schema
+        # config.json — only if not present
         config_path = haney_dir / "config.json"
         if not config_path.exists():
             config_path.write_text(
                 json.dumps(CONFIG_SCHEMA, indent=2), encoding="utf-8"
             )
+            created.append(".haney/config.json")
+
+        # Project-root files (user-owned, visible)
+        root_contents: dict[str, str] = {
+            "plan.md": PLAN_MD_CONTENT,
+            "memory.md": MEMORY_MD_CONTENT,
+            "sessions.md": SESSIONS_MD_CONTENT,
+            "help.md": HELP_MD_CONTENT,
+        }
+
+        for filename, content in root_contents.items():
+            filepath = root_dir / filename
+            filepath.write_text(content, encoding="utf-8")
+            created.append(filename)
 
         summary = Panel(
-            "\n".join(f"  ✓ {f}" for f in sorted(list(file_contents) + ["config.json"])),
+            "\n".join(f"  ✓ {f}" for f in created),
             border_style="green",
             title="Created Files",
             title_align="left",
         )
         console.print(summary)
-        console.print(f"\n[dim]Project files created in {haney_dir}/[/dim]")
+        console.print(f"\n[dim]Project files created in {root_dir}/[/dim]")
 
     except OSError as exc:
         console.print(f"[red]Error creating project files: {exc}[/red]")

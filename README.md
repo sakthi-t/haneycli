@@ -63,12 +63,24 @@ Most coding agents are black boxes. Haney is **transparent by design** — every
 
 ```
 haneycli/
+├── pyproject.toml              # Single source of truth (deps + metadata)
 ├── app.py                      # Entry point
-├── requirements.txt
 ├── haney/
 │   ├── cli.py                  # Typer CLI app
 │   ├── chat.py                 # Read-eval loop + composer
-│   ├── commands.py             # 27 slash-command handlers
+│   ├── commands/               # 30 slash-command handlers (12 modules)
+│   │   ├── __init__.py         # Registry + dispatch
+│   │   ├── _base.py            # Command dataclass
+│   │   ├── _state.py           # Shared state
+│   │   ├── system.py           # /help, /version, /clear, /exit
+│   │   ├── provider.py         # /login, /logout, /models, /model, /provider
+│   │   ├── project_cmds.py     # /project, /reload, /context, /init
+│   │   ├── tool_cmds.py        # /trash, /restore
+│   │   ├── session_cmds.py     # /history, /session, /stats
+│   │   ├── memory_cmds.py      # /remember, /summary, /compact
+│   │   ├── mode_cmds.py        # /think, /status, /plan, /edit, /mode, /permission
+│   │   ├── mcp_cmds.py         # /mcp + all sub-commands
+│   │   └── paste_cmds.py       # /pastes, /paste-compact, /attachments
 │   ├── llm.py                  # ChatSession + streaming
 │   ├── providers.py            # Provider registry + live model fetch
 │   ├── config_bootstrap.py     # Single-source config schema
@@ -86,6 +98,13 @@ haneycli/
 │   │   ├── file_tools.py       # Read, write, edit, rename, trash
 │   │   ├── shell_tools.py      # Safe command execution
 │   │   └── tool_manager.py     # Tool registry + LiteLLM integration
+│   ├── mcp/                    # Model Context Protocol (8 servers)
+│   │   ├── client.py           # JSON-RPC 2.0 protocol
+│   │   ├── transport.py        # Subprocess lifecycle
+│   │   ├── server_manager.py   # Multi-server registry
+│   │   ├── server_configs.py   # Declarative server definitions
+│   │   ├── tool_adapter.py     # MCP → LiteLLM schema conversion
+│   │   └── github_oauth.py     # GitHub device flow OAuth
 │   └── ui/
 │       └── composer.py         # Sticky input + status bar
 └── .haney/
@@ -101,20 +120,17 @@ haneycli/
 ## Installation
 
 ```bash
-# From source
-git clone https://github.com/your-org/haney.git
+# From source (requires uv)
+git clone https://github.com/sakthi-t/haneycli.git
 cd haneycli
-
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-python app.py
+uv sync
+uv run haney
 ```
 
 ```bash
-# Planned: PyPI
+# From PyPI
 pip install haney
+haney
 ```
 
 ---
@@ -122,7 +138,7 @@ pip install haney
 ## Quick Start
 
 ```
-$ python app.py
+$ uv run haney
 
  /\_/\
 ( o.o )
@@ -366,17 +382,45 @@ When enabled, Haney searches Exa before each LLM call and injects results as con
 
 ### MCP — Model Context Protocol
 
-Connect to MCP servers (like GitHub) for extended tool access. MCP tools integrate seamlessly with Haney's existing tool system and approval flow.
+Connect to MCP servers for extended tool access. MCP tools integrate seamlessly with Haney's existing tool system and approval flow.
+
+MCP servers run as subprocesses and communicate over stdio using JSON-RPC 2.0. Tools from each server are namespaced as `mcp__<server>__<toolname>`.
+
+**Available MCP servers:**
+
+| Server | Access | Command |
+|---|---|---|
+| **GitHub** | Requires OAuth PAT | `/mcp login github` → `/mcp connect github` |
+| **DuckDuckGo** | No auth required | `/mcp connect duckduckgo` |
+| **Stack Overflow** | No auth required | `/mcp connect stackoverflow` |
+| **MDN Web Docs** ⚠️ | No auth required | `/mcp connect mdn` |
+| **LangChain** | No auth required | `/mcp connect langchain` |
+| **Playwright** | No auth required | `/mcp connect playwright` |
 
 ```bash
-/mcp login github      # GitHub OAuth device flow
-/mcp connect github    # Start the GitHub MCP server
-/mcp status            # View connected servers and tools
+/mcp connect github      # Start the GitHub MCP server
+/mcp connect mdn         # Start the MDN Web Docs MCP server
+/mcp connect langchain   # Start the LangChain MCP server
+/mcp connect playwright  # Start the Playwright MCP server
+/mcp status              # View connected servers and tools
 ```
 
-GitHub MCP provides tools for repository management, issue tracking, PR review, file operations, and search — all namespaced as `mcp__github__<toolname>`.
-
-MCP servers run as subprocesses and communicate over stdio using JSON-RPC 2.0.
+> ⚠️ **MDN MCP Privacy Notice:** The MDN MCP server is experimental. During the experimental period, MDN stores data about queries received. This data is **not** associated with any information designed to identify users. However, it is possible (though unlikely) that private information shared with the LLM could be included in queries sent to the MDN MCP server. If this is a concern, we recommend not using the MDN MCP server. See MDN's privacy notice for more information on interaction data collection.
+> 
+> 🔒 **Opt-out of first-party analytics:** Haney sets `MOZ_OPT_OUT=1` by default, which sends the `X-Moz-1st-Party-Data-Opt-Out: 1` header with all requests to the MDN MCP server. To allow analytics instead, set `MOZ_OPT_OUT=0` in `.haney/config.json` under `mcp.servers.mdn.env`.
+> 
+> 📜 **Acceptable Use Policy:** By using the MDN MCP server, you agree to comply with Mozilla's [Acceptable Use Policy](https://www.mozilla.org/about/legal/acceptable-use/).
+>
+> ⚠️ **Experimental:** This MCP server is experimental and may be withdrawn at any time.
+>
+> 💬 **Feedback & Contribution:** We welcome any feedback! Chat with us on
+> [Discord](https://discord.gg/mdn) or open an issue on the
+> [MDN MCP GitHub repository](https://github.com/mdn/mcp).
+>
+> 🌐 **Remote transport:** For tools that support HTTP transport (e.g., Claude Code):
+> ```
+> claude mcp add --transport http mdn https://mcp.mdn.mozilla.net/
+> ```
 
 ---
 

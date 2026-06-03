@@ -1,6 +1,6 @@
 # Commands Reference
 
-Haney provides 27 slash-commands organized by category. All commands are prefixed with `/` and routed through `commands.py`'s dispatch function.
+Haney provides 30 slash-commands organized by category. All commands are prefixed with `/` and routed through the `haney/commands/` package's dispatch function (12 modules).
 
 ## Provider & Model
 

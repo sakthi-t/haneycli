@@ -17,10 +17,10 @@ from haney.config import HANEY_DIR
 # ── File discovery ────────────────────────────────────────────────────────────
 
 # Root-level files (user-owned, committed to git)
-ROOT_FILES = ["plan.md", "README.md"]
+ROOT_FILES = ["plan.md", "README.md", "memory.md", "sessions.md", "help.md"]
 
 # .haney/ files (Haney-managed, not committed)
-HANEY_FILES = ["summary.md", "memory.md", "tasks.md"]
+HANEY_FILES = ["summary.md", "tasks.md"]
 
 HIGH_PRIORITY = HANEY_FILES + ROOT_FILES
 MEDIUM_PRIORITY = ["architecture.md", "requirements.md"]
@@ -254,9 +254,9 @@ class ProjectContextManager:
     def init_files(self) -> list[str]:
         """Create starter project-awareness files.
 
-        Haney-managed files (memory.md, summary.md, tasks.md)
-        are created in .haney/. User-owned files (plan.md) are
-        created at the project root.
+        Infrastructure files (summary.md, tasks.md) are created in
+        .haney/. User-owned files (plan.md, memory.md) are created
+        at the project root.
 
         Only creates files that do not already exist.
 
@@ -268,7 +268,6 @@ class ProjectContextManager:
 
         # .haney/ files
         haney_templates: dict[str, str] = {
-            "memory.md": self._template_memory_md(),
             "summary.md": self._template_summary_md(),
             "tasks.md": self._template_tasks_md(),
         }
@@ -276,6 +275,7 @@ class ProjectContextManager:
         # Root files
         root_templates: dict[str, str] = {
             "plan.md": self._template_plan_md(self.project_name),
+            "memory.md": self._template_memory_md(),
         }
 
         created: list[str] = []

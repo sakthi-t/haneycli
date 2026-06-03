@@ -41,6 +41,11 @@ tasks.md
 architecture.md
 requirements.md
 
+# Session and help files — local only
+sessions.md
+help.md
+system.md
+
 # Session archives (under .haney/)
 .haney/sessions/
 

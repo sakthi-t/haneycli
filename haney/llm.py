@@ -41,6 +41,7 @@ from haney.thinking_manager import get_thinking_mode, get_completion_params
 from haney.mode_manager import get_mode
 from haney.permission_manager import PermissionManager
 from haney.mcp.server_manager import MCPServerManager
+from haney.mcp.server_configs import get_server_config
 
 
 class ChatSession:
@@ -115,8 +116,13 @@ class ChatSession:
                 continue
             if not srv_cfg.get("enabled", False):
                 continue
-            if not srv_cfg.get("token") and not srv_cfg.get("env"):
-                continue  # No auth configured
+
+            # Check if this server requires authentication
+            srv_config = get_server_config(srv_name)
+            needs_auth = srv_config.requires_auth if srv_config else True
+
+            if needs_auth and not srv_cfg.get("token") and not srv_cfg.get("env"):
+                continue  # No auth configured for a server that requires it
 
             try:
                 mcp_mgr.connect(srv_name, srv_cfg)
@@ -286,12 +292,22 @@ class ChatSession:
                     litellm_model, messages, api_key, extra_params,
                 )
 
-                # Track usage
-                if usage and self.session_mgr:
+                # Track usage — fall back to estimation
+                # if the provider didn't return usage in the stream
+                if self.session_mgr:
+                    prompt_tokens = usage.get("prompt_tokens", 0) if usage else 0
+                    completion_tokens = usage.get("completion_tokens", 0) if usage else 0
+
+                    if prompt_tokens == 0 and completion_tokens == 0:
+                        # Estimate: char ÷ 4 for input, char ÷ 4 for output
+                        prompt_tokens = sum(
+                            len(m["content"]) // 4 for m in messages
+                            if isinstance(m.get("content"), str)
+                        )
+                        completion_tokens = max(1, len(streamed_text) // 4)
+
                     self.session_mgr.record_usage(
-                        model,
-                        usage.get("prompt_tokens", 0),
-                        usage.get("completion_tokens", 0),
+                        model, prompt_tokens, completion_tokens,
                     )
 
                 # No tool calls — final answer streamed live

@@ -26,6 +26,7 @@ from haney.config_bootstrap import bootstrap_config
 from haney.permission_manager import PermissionManager
 from haney.mcp.server_manager import MCPServerManager
 from haney.ui.composer import Composer
+from haney.paste_buffer import get_paste_buffer
 
 
 def start_chat(console: Console) -> None:
@@ -86,6 +87,11 @@ def start_chat(console: Console) -> None:
 
             if not user_input.strip():
                 continue
+
+            # Expand [pasteN] references before sending to LLM
+            buf = get_paste_buffer()
+            if buf.count() > 0:
+                user_input = buf.expand(user_input)
 
             dispatch(user_input, console, chat)
             console.print()

@@ -32,6 +32,8 @@ MODEL_PRICING: dict[str, dict[str, float]] = {
     "gpt-4":          {"input": 30.00, "output": 60.00},
     "deepseek-chat":  {"input": 0.27, "output": 1.10},
     "deepseek-reasoner": {"input": 0.55, "output": 2.19},
+    "deepseek-v4-pro": {"input": 0.27, "output": 1.10},
+    "deepseek-v4": {"input": 0.27, "output": 1.10},
     "claude-opus-4-20250514":  {"input": 15.00, "output": 75.00},
     "claude-sonnet-4-20250514": {"input": 3.00, "output": 15.00},
     "claude-3.5-sonnet": {"input": 3.00, "output": 15.00},
@@ -48,6 +50,40 @@ MODEL_PRICING: dict[str, dict[str, float]] = {
     "mixtral-8x7b-32768":      {"input": 0.24, "output": 0.24},
 }
 DEFAULT_PRICING = {"input": 1.00, "output": 4.00}
+
+
+def _get_model_pricing(model: str) -> dict[str, float]:
+    """Get pricing for a model, with fuzzy prefix matching.
+
+    Falls back to DEFAULT_PRICING if no match is found.
+    Strips provider prefixes like 'openai/', 'deepseek/', etc.
+    """
+    # Normalize: strip ALL provider prefixes (e.g.
+    # openrouter/anthropic/claude-sonnet-4 → claude-sonnet-4)
+    normalized = model.lower()
+    PROVIDER_PREFIXES = (
+        "openai/", "deepseek/", "anthropic/", "gemini/", "groq/", "openrouter/"
+    )
+    while True:
+        stripped = False
+        for prefix in PROVIDER_PREFIXES:
+            if normalized.startswith(prefix):
+                normalized = normalized[len(prefix):]
+                stripped = True
+                break
+        if not stripped:
+            break
+
+    # Exact match
+    if normalized in MODEL_PRICING:
+        return MODEL_PRICING[normalized]
+
+    # Prefix/substring match
+    for key, pricing in MODEL_PRICING.items():
+        if normalized.startswith(key) or key.startswith(normalized):
+            return pricing
+
+    return DEFAULT_PRICING
 
 
 @dataclass
@@ -90,6 +126,7 @@ class SessionManager:
         self._api_calls: int = 0
         self._cost: float = 0.0
         self._messages: list[dict[str, str]] = []
+        self._last_context_tokens: int = 0
 
     # ── Properties ────────────────────────────────────────────────────────
 
@@ -133,6 +170,11 @@ class SessionManager:
     def cost(self) -> float:
         return self._cost
 
+    @property
+    def context_tokens(self) -> int:
+        """Estimated tokens in the last conversation context."""
+        return self._last_context_tokens
+
     # ── Tracking ──────────────────────────────────────────────────────────
 
     def record_message(self, role: str, content: str) -> None:
@@ -161,8 +203,9 @@ class SessionManager:
         self._api_calls += 1
         self._input_tokens += prompt_tokens
         self._output_tokens += completion_tokens
+        self._last_context_tokens = prompt_tokens
 
-        pricing = MODEL_PRICING.get(model, DEFAULT_PRICING)
+        pricing = _get_model_pricing(model)
         cost_in = (prompt_tokens / 1_000_000) * pricing["input"]
         cost_out = (completion_tokens / 1_000_000) * pricing["output"]
         self._cost += cost_in + cost_out
@@ -192,6 +235,7 @@ class SessionManager:
             "output_tokens": self._output_tokens,
             "api_calls": self._api_calls,
             "cost": round(self._cost, 6),
+            "last_context_tokens": self._last_context_tokens,
         }
 
         filepath = sessions_dir / f"{self.session_id}.json"

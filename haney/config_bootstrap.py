@@ -32,6 +32,9 @@ CONFIG_SCHEMA: dict[str, Any] = {
         "sticky_input": True,
         "input_bottom_padding": 2,
         "show_status_bar": True,
+        "paste_compact": True,
+        "paste_char_threshold": 300,
+        "paste_line_threshold": 3,
     },
 
     # ── Approval (legacy) ────────────────────────────────────
@@ -68,6 +71,14 @@ CONFIG_SCHEMA: dict[str, Any] = {
                 "enabled": False,
                 "command": "npx",
                 "args": ["-y", "mcp-remote", "https://mcp.stackoverflow.com"],
+                "token": None,
+                "env": {},
+                "env_token_key": "",
+            },
+            "duckduckgo": {
+                "enabled": False,
+                "command": "uvx",
+                "args": ["duckduckgo-mcp-server"],
                 "token": None,
                 "env": {},
                 "env_token_key": "",

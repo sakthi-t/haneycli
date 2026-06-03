@@ -1,7 +1,11 @@
 """Terminal composer for Haney.
 
 Renders a visually separated input area with status info and
-a styled prompt bar. Supports configurable bottom padding.
+a styled prompt bar. Supports configurable bottom padding and
+compact paste display for large/multi-line pastes.
+
+Uses bracketed paste mode to capture pasted text silently,
+preventing terminal flooding when large blocks are pasted.
 """
 
 from __future__ import annotations
@@ -10,7 +14,6 @@ from pathlib import Path
 
 from rich.console import Console
 from rich.panel import Panel
-from rich.prompt import Prompt
 from rich.rule import Rule
 from rich.text import Text
 
@@ -25,6 +28,29 @@ from haney.thinking_manager import get_thinking_mode
 from haney.mode_manager import get_mode
 from haney.permission_manager import get_permission_mode
 from haney.session_manager import SessionManager
+from haney.paste_buffer import (
+    get_paste_buffer,
+    should_compact,
+    format_paste_notification,
+)
+from haney.ui.bracketed_input import bracketed_prompt
+
+
+def _rich_to_plain(text: str) -> str:
+    """Strip Rich markup tags to produce plain terminal text.
+
+    Removes style tags like [bold], [dim], [/dim], etc.
+    while preserving the visible content.
+
+    Args:
+        text: Rich-formatted prompt string.
+
+    Returns:
+        Plain text suitable for raw terminal output.
+    """
+    import re
+    # Remove Rich style tags: [style], [/style], [style attr=val], etc.
+    return re.sub(r"\[/?[a-zA-Z_][a-zA-Z0-9_.#= -]*\]", "", text)
 
 
 def _ui_config(cwd: Path | None = None) -> dict:
@@ -72,16 +98,12 @@ class Composer:
         search_icon = "on" if search_on else "off"
         cost = f"${self.session_mgr.cost:.3f}" if self.session_mgr else "$0.000"
         ctx = ""
-        try:
-            from haney.project_context import ProjectContextManager
-            pcm = ProjectContextManager()
-            tokens = pcm.total_tokens
-            if tokens > 1000:
-                ctx = f"  Ctx: {tokens // 1000}k"
-            elif tokens:
-                ctx = f"  Ctx: {tokens}"
-        except Exception:
-            pass
+        if self.session_mgr and self.session_mgr.context_tokens:
+            ctx_tokens = self.session_mgr.context_tokens
+            if ctx_tokens >= 1000:
+                ctx = f"  Ctx: {ctx_tokens / 1000:.0f}k"
+            elif ctx_tokens:
+                ctx = f"  Ctx: {ctx_tokens}"
 
         return (
             f"Model: {model}  Think: {think}  Mode: {mode}  "
@@ -134,8 +156,40 @@ class Composer:
     def ask(self) -> str:
         """Display the composer and prompt for user input.
 
+        Uses bracketed paste mode to capture pasted text silently.
+        Large/multi-line pastes are stored in the paste buffer and
+        shown as compact [pasteN] labels instead of flooding the
+        terminal with pasted text.
+
         Returns:
-            User input string.
+            User input string (may contain [pasteN] references).
         """
         self.render()
-        return Prompt.ask(self._build_prompt_text())
+
+        # Build the prompt (uses Rich markup for styling).
+        # Strip Rich markup tags for the raw terminal prompt since
+        # bracketed_prompt renders to the raw terminal.
+        prompt_raw = _rich_to_plain(self._build_prompt_text())
+
+        try:
+            raw_input = bracketed_prompt(prompt_raw)
+        except (KeyboardInterrupt, EOFError):
+            raise
+
+        if not raw_input.strip():
+            return ""
+
+        # ── Check for paste compaction ──────────────────────────
+        ui_cfg = _ui_config(self.cwd)
+        if ui_cfg.get("paste_compact", True) and should_compact(
+            raw_input,
+            char_threshold=ui_cfg.get("paste_char_threshold", 300),
+            line_threshold=ui_cfg.get("paste_line_threshold", 3),
+        ):
+            buf = get_paste_buffer()
+            label = buf.store(raw_input)
+            notification = format_paste_notification(label, raw_input)
+            self.console.print(f"  {notification}")
+            return label
+
+        return raw_input

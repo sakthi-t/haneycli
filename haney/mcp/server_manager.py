@@ -101,6 +101,13 @@ class MCPServerManager:
 
         # Build environment
         env: dict[str, str] = dict(run_cfg.get("env", {}))
+
+        # Merge extra_env from predefined server config (takes lower priority)
+        if srv_config and srv_config.extra_env:
+            for key, value in srv_config.extra_env.items():
+                if key not in env:
+                    env[key] = value
+
         token = run_cfg.get("token")
         token_key = (
             srv_config.env_token_key

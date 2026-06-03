@@ -8,9 +8,9 @@ HANEY_DIR = ".haney"
 # Application version
 VERSION = "0.1.0"
 
-# Default files created during first-run setup
+# Default project-root files created during first-run setup
 DEFAULT_FILES = [
-    "system.md",
+    "plan.md",
     "memory.md",
     "sessions.md",
     "help.md",
