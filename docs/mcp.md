@@ -1,19 +1,22 @@
 # MCP — Model Context Protocol
 
 ```
-  ┌─────────────────────────────────────────────┐
-  │                  Haney                       │
-  │   ┌─────────┐  ┌─────────┐  ┌───────────┐  │
-  │   │ GitHub  │  │  MDN    │  │ Playwright│  │
-  │   └────┬────┘  └────┬────┘  └─────┬─────┘  │
-  │   ┌────┴────┐  ┌────┴────┐  ┌─────┴─────┐  │
-  │   │ DuckGo  │  │  SO     │  │ LangChain │  │
-  │   └────┬────┘  └────┬────┘  └─────┬─────┘  │
-  │   ┌────┴────┐  ┌────┴────┐           │      │
-  │   │   FS    │  │ SeqThink│           │      │
-  │   └─────────┘  └─────────┘           │      │
-  │       8 servers · stdio transport · JSON-RPC 2.0  │
-  └─────────────────────────────────────────────┘
+  ┌───────────────────────────────────────────────────┐
+  │                     Haney                          │
+  │   ┌─────────┐  ┌─────────┐  ┌───────────┐         │
+  │   │ GitHub  │  │  MDN    │  │ Playwright│         │
+  │   └────┬────┘  └────┬────┘  └─────┬─────┘         │
+  │   ┌────┴────┐  ┌────┴────┐  ┌─────┴─────┐         │
+  │   │ DuckGo  │  │   SO    │  │ LangChain │         │
+  │   └────┬────┘  └────┬────┘  └─────┬─────┘         │
+  │   ┌────┴────┐  ┌────┴────┐  ┌─────┴─────┐         │
+  │   │   FS    │  │ SeqThink│  │   Notion  │         │
+  │   └────┬────┘  └────┬────┘  └─────┬─────┘         │
+  │   ┌────┴────┐           ┌─────────┴──────┐        │
+  │   │ Tavily  │           │  mcp-remote    │        │
+  │   └─────────┘           └────────────────┘        │
+  │     10 servers · stdio + mcp-remote · JSON-RPC 2.0│
+  └───────────────────────────────────────────────────┘
 ```
 
 Haney connects to MCP servers as subprocesses over stdio using JSON-RPC 2.0.
@@ -32,6 +35,8 @@ permission system (ASK/SAVE/AUTO).
 | 6 | **Sequential Thinking** | None | `mcp__sequential-thinking__*` |
 | 7 | **LangChain** | None | `mcp__langchain__*` |
 | 8 | **Playwright** | None | `mcp__playwright__*` |
+| 9 | **Tavily** | API Key | `mcp__tavily__*` |
+| 10 | **Notion** | Integration Token | `mcp__notion__*` |
 
 ## Server Details
 
@@ -87,11 +92,27 @@ LangChain / LangGraph documentation search.
 Headless browser automation — navigation, screenshots, form filling,
 network inspection, JavaScript evaluation.
 
+### Tavily
+AI-optimized web search and content extraction via mcp-remote (HTTP transport).
+Requires an API key from [tavily.com](https://tavily.com).
+```
+/mcp login tavily        → Enter Tavily API key
+/mcp connect tavily      → Start server
+```
+
+### Notion
+Workspace integration — search pages, read/write databases,
+manage comments, list users. Requires a Notion integration token.
+```
+/mcp login notion        → Enter Notion integration token
+/mcp connect notion      → Start server
+```
+
 ## Commands
 
 | Command | Description |
 |---|---|
-| `/mcp login <server>` | Authenticate (GitHub OAuth) |
+| `/mcp login <server>` | Authenticate (GitHub OAuth, Tavily API key, Notion token) |
 | `/mcp logout <server>` | Clear stored credentials |
 | `/mcp connect <server>` | Start a server |
 | `/mcp disconnect [name]` | Stop server(s) |

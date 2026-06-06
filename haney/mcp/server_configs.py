@@ -159,6 +159,40 @@ MCP_SERVERS: dict[str, MCPServerConfig] = {
         requires_node=True,
         npm_package="@playwright/mcp",
     ),
+    "tavily": MCPServerConfig(
+        display_name="Tavily",
+        command="npx",
+        args=[
+            "-y",
+            "mcp-remote",
+            "https://mcp.tavily.com/mcp/",
+        ],
+        env_token_key="",
+        description=(
+            "Real-time web search & data extraction — "
+            "AI-optimized search API built for LLMs. "
+            "Supports search, news, and intelligent content extraction. "
+            "Requires a Tavily API key from https://app.tavily.com/"
+        ),
+        requires_auth=True,
+        requires_node=True,
+        npm_package="tavily-mcp",
+    ),
+    "notion": MCPServerConfig(
+        display_name="Notion",
+        command="npx",
+        args=["-y", "@notionhq/notion-mcp-server"],
+        env_token_key="NOTION_TOKEN",
+        description=(
+            "Notion workspace integration — search pages, read & write "
+            "page content, manage databases with filtering and sorting, "
+            "create and reply to comments, manage users, move and duplicate "
+            "pages, and more. Requires a Notion integration token."
+        ),
+        requires_auth=True,
+        requires_node=True,
+        npm_package="@notionhq/notion-mcp-server",
+    ),
 }
 
 

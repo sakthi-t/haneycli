@@ -98,7 +98,7 @@ haneycli/
 │   │   ├── file_tools.py       # Read, write, edit, rename, trash
 │   │   ├── shell_tools.py      # Safe command execution
 │   │   └── tool_manager.py     # Tool registry + LiteLLM integration
-│   ├── mcp/                    # Model Context Protocol (8 servers)
+│   ├── mcp/                    # Model Context Protocol (10 servers)
 │   │   ├── client.py           # JSON-RPC 2.0 protocol
 │   │   ├── transport.py        # Subprocess lifecycle
 │   │   ├── server_manager.py   # Multi-server registry
@@ -270,7 +270,7 @@ Attach files with `@` syntax — they're automatically loaded and injected into 
 @src/utils/helper.py   # Deep paths
 ```
 
-119 file extensions supported — Python, JS, TS, Go, Rust, HTML, CSS, YAML, Dockerfile, SQL, and more. Images show metadata (dimensions, format).
+119+ file extensions supported — Python, JS, TS, Go, Rust, HTML, CSS, YAML, Dockerfile, SQL, and more. Images show metadata (dimensions, format). Binary files (PDF, DOCX, XLSX, PPTX, audio, video, archives) show file type and size metadata. The status bar shows a persistent `📎 ×N (size, ~tokens)` indicator while files are attached.
 
 Token estimation and configurable limits prevent context overflow.
 
@@ -396,12 +396,16 @@ MCP servers run as subprocesses and communicate over stdio using JSON-RPC 2.0. T
 | **MDN Web Docs** ⚠️ | No auth required | `/mcp connect mdn` |
 | **LangChain** | No auth required | `/mcp connect langchain` |
 | **Playwright** | No auth required | `/mcp connect playwright` |
+| **Tavily** | Requires API key | `/mcp login tavily` → `/mcp connect tavily` |
+| **Notion** | Requires integration token | `/mcp login notion` → `/mcp connect notion` |
 
 ```bash
 /mcp connect github      # Start the GitHub MCP server
 /mcp connect mdn         # Start the MDN Web Docs MCP server
 /mcp connect langchain   # Start the LangChain MCP server
 /mcp connect playwright  # Start the Playwright MCP server
+/mcp connect tavily      # Start the Tavily search MCP server
+/mcp connect notion      # Start the Notion workspace MCP server
 /mcp status              # View connected servers and tools
 ```
 
@@ -478,7 +482,7 @@ Missing keys are auto-populated with defaults on startup. `null` means unlimited
 
 | Command | Description |
 |---|---|
-| `/mcp login <server>` | Authenticate with an MCP server (GitHub OAuth) |
+| `/mcp login <server>` | Authenticate with an MCP server (GitHub OAuth, Tavily API key, Notion token) |
 | `/mcp logout <server>` | Clear stored MCP credentials |
 | `/mcp connect <server>` | Connect to an MCP server |
 | `/mcp disconnect [server]` | Disconnect from MCP server(s) |

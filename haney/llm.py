@@ -60,6 +60,7 @@ class ChatSession:
         session_mgr: SessionManager | None = None,
         perm_mgr: PermissionManager | None = None,
         mcp_mgr: MCPServerManager | None = None,
+        file_ctx: FileContextManager | None = None,
     ) -> None:
         """Initialise a new chat session.
 
@@ -70,6 +71,7 @@ class ChatSession:
             session_mgr: SessionManager for tracking.
             perm_mgr: PermissionManager for approval flow.
             mcp_mgr: Optional MCPServerManager for MCP tools.
+            file_ctx: Optional shared FileContextManager. Created if not provided.
         """
         self.console = console
         self.cwd = cwd or Path.cwd()
@@ -77,7 +79,7 @@ class ChatSession:
         self._system_prompt: str | None = None
         self.search = SearchManager(console, self.cwd)
         self.project_ctx = project_ctx
-        self.file_ctx = FileContextManager(self.cwd)
+        self.file_ctx = file_ctx or FileContextManager(self.cwd)
         self.session_mgr = session_mgr
 
         self.tool_ctx = ToolManager(console, self.cwd)
@@ -382,6 +384,11 @@ class ChatSession:
             extra_parts.append(f"📎 ×{len(attach_names)}")
         extra = " " + " ".join(extra_parts) if extra_parts else ""
         self._display_response_header(provider, model, litellm_model + extra, elapsed)
+
+        # ── Persistent attachment indicator ──────────────────
+        if not self.file_ctx.empty:
+            status = self.file_ctx.compact_status()
+            self.console.print(f"  [dim]{status} — loaded in context[/dim]")
 
         return assistant_content
 

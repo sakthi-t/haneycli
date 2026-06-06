@@ -20,6 +20,7 @@ from haney.commands import (
 )
 from haney.llm import ChatSession
 from haney.project_context import ProjectContextManager
+from haney.file_context import FileContextManager
 from haney.providers import is_logged_in, is_web_search_enabled
 from haney.session_manager import SessionManager
 from haney.config_bootstrap import bootstrap_config
@@ -59,8 +60,12 @@ def start_chat(console: Console) -> None:
     mcp_mgr = MCPServerManager(cwd=cwd, console=console)
     set_mcp_manager(mcp_mgr)
 
+    # Shared file context — for status bar + LLM context injection
+    file_ctx = FileContextManager(cwd)
+
     # Composer for styled input
     composer = Composer(console, session_mgr, cwd)
+    composer.set_file_context(file_ctx)
 
     console.print()
     console.print(
@@ -75,6 +80,7 @@ def start_chat(console: Console) -> None:
         session_mgr=session_mgr,
         perm_mgr=perm_mgr,
         mcp_mgr=mcp_mgr,
+        file_ctx=file_ctx,
     )
 
     try:

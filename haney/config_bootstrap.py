@@ -31,7 +31,9 @@ CONFIG_SCHEMA: dict[str, Any] = {
     "ui": {
         "sticky_input": True,
         "input_bottom_padding": 2,
+        "input_after_padding": 3,
         "show_status_bar": True,
+        "show_bottom_rule": True,
         "paste_compact": True,
         "paste_char_threshold": 300,
         "paste_line_threshold": 3,

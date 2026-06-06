@@ -69,9 +69,21 @@ CONFIG_EXTS = {
     ".xml", ".plist",
     ".lock",
 }
-IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico"}
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico", ".tiff", ".tif"}
 
-ALL_SUPPORTED = TEXT_EXTS | CODE_EXTS | CONFIG_EXTS | IMAGE_EXTS
+# ── Binary / rich formats (metadata only) ────────────────────────────────────
+BINARY_META_EXTS: set[str] = {
+    ".pdf",
+    ".docx", ".doc",
+    ".xlsx", ".xls",
+    ".pptx", ".ppt",
+    ".mp3", ".wav", ".ogg", ".flac", ".aac", ".m4a",
+    ".mp4", ".avi", ".mov", ".mkv", ".webm",
+    ".zip", ".tar", ".gz", ".bz2", ".xz", ".7z", ".rar",
+    ".epub", ".mobi",
+}
+
+ALL_SUPPORTED = TEXT_EXTS | CODE_EXTS | CONFIG_EXTS | IMAGE_EXTS | BINARY_META_EXTS
 
 DEFAULT_MAX_TOKENS = 10000
 
@@ -244,7 +256,24 @@ class FileContextManager:
                     is_image=True,
                 )
                 if console:
-                    console.print(f"  [green]✓[/green] {name} [dim](image, metadata only)[/dim]")
+                    kb = size / 1024
+                    console.print(f"  [green]✓[/green] {name} [dim](🖼 image, {kb:.1f} KB)[/dim]")
+                continue
+
+            # ── Binary / rich format: metadata only ─────────
+            if ext in BINARY_META_EXTS:
+                meta = _read_binary_meta(path, ext)
+                self._attachments[name] = AttachedFile(
+                    name=name,
+                    path=path,
+                    content=meta,
+                    tokens=self._estimate(meta),
+                    size_bytes=size,
+                )
+                if console:
+                    kb = size / 1024
+                    fmt_label = ext.upper().lstrip(".")
+                    console.print(f"  [green]✓[/green] {name} [dim]({fmt_label}, metadata only, {kb:.1f} KB)[/dim]")
                 continue
 
             # ── Text / code / config ──────────────────────────
@@ -309,6 +338,12 @@ class FileContextManager:
                 )
                 continue
 
+            ext = f.path.suffix.lower()
+            if ext in BINARY_META_EXTS:
+                # Binary/rich format: show metadata as plain text
+                parts.append(f"### {f.name} (binary)\n\n{f.content}\n\n")
+                continue
+
             lang = f.path.suffix.lstrip(".")
             parts.append(f"### {f.name}\n```{lang}\n")
 
@@ -343,6 +378,23 @@ class FileContextManager:
 
     # ── Display ────────────────────────────────────────────────────────────
 
+    def compact_status(self) -> str:
+        """Return a compact one-line status for the composer bar.
+
+        Returns:
+            Empty string if no attachments, otherwise:
+            '📎 ×3 (45KB, ~1.2k tokens)'
+        """
+        if self.empty:
+            return ""
+        total_kb = sum(f.size_bytes for f in self._attachments.values()) / 1024
+        if total_kb >= 1024:
+            size_str = f"{total_kb / 1024:.1f}MB"
+        else:
+            size_str = f"{total_kb:.0f}KB"
+        token_str = f"{self.total_tokens / 1000:.1f}k" if self.total_tokens >= 1000 else str(self.total_tokens)
+        return f"📎 ×{len(self._attachments)} ({size_str}, ~{token_str})"
+
     def display_summary(self, console: Console) -> None:
         """Render an attachment summary panel in Rich UI.
 
@@ -364,7 +416,13 @@ class FileContextManager:
 
         for f in self._attachments.values():
             kb = f.size_bytes / 1024
-            label = f"{f.name} 🖼" if f.is_image else f.name
+            if f.is_image:
+                label = f"{f.name} 🖼"
+            elif f.path.suffix.lower() in BINARY_META_EXTS:
+                fmt = f.path.suffix.upper().lstrip(".")
+                label = f"{f.name} 📦 {fmt}"
+            else:
+                label = f.name
             table.add_row(label, f"{kb:.1f} KB", str(f.tokens))
 
         table.add_section()
@@ -425,6 +483,9 @@ def _is_under(path: Path, parent: Path) -> bool:
         return True
     except ValueError:
         return False
+
+
+def _read_image_meta(path: Path) -> str | None:
     """Read image metadata using Pillow.
 
     Args:
@@ -443,5 +504,103 @@ def _is_under(path: Path, parent: Path) -> bool:
             w, h = img.size
             fmt = img.format or path.suffix.upper().lstrip(".")
             return f"**Format:** {fmt}  \n**Dimensions:** {w}×{h} pixels  \n"
+    except Exception:
+        return None
+
+
+def _read_binary_meta(path: Path, ext: str) -> str:
+    """Generate metadata for binary / rich format files.
+
+    Attempts text extraction for PDFs (pypdf) and DOCX (python-docx).
+    Falls back to file-type-and-size metadata if extraction fails
+    or the format isn't supported for extraction.
+
+    Args:
+        path: Path to the file.
+        ext: Lowercased file extension.
+
+    Returns:
+        Formatted metadata string (possibly with extracted text).
+    """
+    size_bytes = path.stat().st_size
+    if size_bytes >= 1_048_576:
+        size_str = f"{size_bytes / 1_048_576:.1f} MB"
+    elif size_bytes >= 1024:
+        size_str = f"{size_bytes / 1024:.1f} KB"
+    else:
+        size_str = f"{size_bytes} bytes"
+
+    fmt = ext.upper().lstrip(".")
+
+    # ── PDF: try text extraction with pypdf ──────────────────
+    if ext == ".pdf":
+        text = _try_extract_pdf(path)
+        if text is not None:
+            return (
+                f"**File type:** PDF\n"
+                f"**Size:** {size_str}\n"
+                f"**Pages extracted:** see content below\n\n"
+                f"{text}\n"
+            )
+
+    # ── DOCX: try text extraction with python-docx ──────────
+    if ext == ".docx":
+        text = _try_extract_docx(path)
+        if text is not None:
+            return (
+                f"**File type:** DOCX\n"
+                f"**Size:** {size_str}\n"
+                f"**Content extracted:** see below\n\n"
+                f"{text}\n"
+            )
+
+    # ── Fallback: metadata only ─────────────────────────────
+    return (
+        f"**File type:** {fmt}\n"
+        f"**Size:** {size_str}\n"
+        f"**Note:** Binary file — content preview not available.\n"
+    )
+
+
+def _try_extract_pdf(path: Path) -> str | None:
+    """Try to extract text from a PDF file using pypdf.
+
+    Returns concatenated text from all pages, or None on failure.
+    """
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        return None
+
+    try:
+        reader = PdfReader(str(path))
+        pages = []
+        for i, page in enumerate(reader.pages):
+            text = page.extract_text()
+            if text and text.strip():
+                pages.append(f"--- Page {i + 1} ---\n{text.strip()}")
+        if not pages:
+            return None
+        return "\n\n".join(pages)
+    except Exception:
+        return None
+
+
+def _try_extract_docx(path: Path) -> str | None:
+    """Try to extract text from a DOCX file using python-docx.
+
+    Returns concatenated paragraph text, or None on failure.
+    """
+    try:
+        from docx import Document
+    except ImportError:
+        return None
+
+    try:
+        doc = Document(str(path))
+        paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+        if not paragraphs:
+            return None
+        return "\n\n".join(paragraphs)
     except Exception:
         return None

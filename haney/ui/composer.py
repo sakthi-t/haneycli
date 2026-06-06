@@ -86,6 +86,14 @@ class Composer:
         self.console = console
         self.session_mgr = session_mgr
         self.cwd = cwd or Path.cwd()
+        self._file_ctx = None  # set later via set_file_context()
+
+    def set_file_context(self, file_ctx) -> None:
+        """Bind a FileContextManager for status bar display.
+
+        Called after ChatSession creates the shared file context.
+        """
+        self._file_ctx = file_ctx
 
     def _build_status_line(self) -> str:
         """Build a single-line status string."""
@@ -105,9 +113,14 @@ class Composer:
             elif ctx_tokens:
                 ctx = f"  Ctx: {ctx_tokens}"
 
+        # ── Attachment indicator ────────────────────────────
+        attach = ""
+        if self._file_ctx is not None and not self._file_ctx.empty:
+            attach = f"  {self._file_ctx.compact_status()}"
+
         return (
             f"Model: {model}  Think: {think}  Mode: {mode}  "
-            f"Perm: {perm}  Search: {search_icon}  Cost: {cost}{ctx}"
+            f"Perm: {perm}  Search: {search_icon}  Cost: {cost}{ctx}{attach}"
         )
 
     def _build_prompt_text(self) -> str:
@@ -138,11 +151,6 @@ class Composer:
         if not _sticky_enabled(self.cwd):
             return
 
-        # Bottom padding
-        padding = _bottom_padding(self.cwd)
-        for _ in range(max(0, padding)):
-            self.console.print()
-
         # Status bar
         if _show_status(self.cwd):
             status = self._build_status_line()
@@ -152,6 +160,24 @@ class Composer:
                 characters="─",
             )
             self.console.print(rule)
+
+    def render_bottom(self) -> None:
+        """Render a separator below the input area after submission.
+
+        Prints a dim rule (bottom line) and configurable padding
+        to visually separate the typing area from conversation output
+        and lift the area up from the bottom of the screen.
+        """
+        if not _sticky_enabled(self.cwd):
+            return
+
+        if _ui_config(self.cwd).get("show_bottom_rule", True):
+            rule = Rule(style="dim", characters="─")
+            self.console.print(rule)
+
+        after_padding = _ui_config(self.cwd).get("input_after_padding", 3)
+        for _ in range(max(0, after_padding)):
+            self.console.print()
 
     def ask(self) -> str:
         """Display the composer and prompt for user input.
@@ -175,6 +201,8 @@ class Composer:
             raw_input = bracketed_prompt(prompt_raw)
         except (KeyboardInterrupt, EOFError):
             raise
+
+        self.render_bottom()
 
         if not raw_input.strip():
             return ""

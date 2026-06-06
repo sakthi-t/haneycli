@@ -118,6 +118,10 @@ def cmd_mcp_login(console: Console, args: list[str]) -> None:
         _cmd_mcp_login_langchain(console)
     elif server_name == "playwright":
         _cmd_mcp_login_playwright(console)
+    elif server_name == "tavily":
+        _cmd_mcp_login_tavily(console)
+    elif server_name == "notion":
+        _cmd_mcp_login_notion(console)
     else:
         cfg = get_server_config(server_name)
         if cfg is None:
@@ -548,6 +552,194 @@ def _cmd_mcp_login_playwright(console: Console) -> None:
     console.print("[bold green]✓[/bold green] No login needed — run [bold]/mcp connect playwright[/bold] to start.")
 
 
+def _cmd_mcp_login_tavily(console: Console) -> None:
+    """Handle Tavily MCP authentication — API key prompt."""
+    cfg = load_config(Path.cwd())
+    tavily_cfg = cfg.get("mcp", {}).get("servers", {}).get("tavily", {})
+
+    existing_token = tavily_cfg.get("token")
+    if existing_token:
+        console.print(
+            "[yellow]Already have a Tavily API key configured.[/yellow]"
+        )
+        if not Confirm.ask("Replace with a new key?", default=False):
+            console.print("[dim]Keeping existing Tavily API key.[/dim]")
+            return
+
+    console.print()
+    console.print("[bold]Tavily MCP — Real-time Web Search for LLMs[/bold]")
+    console.print()
+    console.print(
+        "Tavily is a search API built specifically for AI agents and LLMs. "
+        "It delivers fast, accurate, structured search results optimized for "
+        "AI consumption."
+    )
+    console.print()
+    console.print("  [bold cyan]Tools available:[/bold cyan]")
+    console.print("    • tavily_search  — Real-time web search with structured results")
+    console.print("    • tavily_extract — Intelligent content extraction from URLs")
+    console.print()
+    console.print(
+        "[bold cyan]Remote MCP via mcp-remote:[/bold cyan] "
+        "The Tavily MCP server connects to [dim]mcp.tavily.com[/dim] — "
+        "no local installation needed. Authentication happens via your "
+        "API key embedded in the connection URL."
+    )
+    console.print()
+    console.print("[dim]Powered by:[/dim] [underline]https://github.com/tavily-ai/tavily-mcp[/underline]")
+    console.print("[dim]Run via: npx -y mcp-remote https://mcp.tavily.com/mcp/?tavilyApiKey=<key>[/dim]")
+    console.print()
+    console.print(
+        "[bold yellow]Get your free API key:[/bold yellow] "
+        "[underline]https://app.tavily.com/[/underline]"
+    )
+    console.print("[dim]Free tier: 1,000 searches/month. Paid plans available for higher limits.[/dim]")
+    console.print()
+
+    token = Prompt.ask(
+        "Enter your Tavily API key",
+        password=True,
+    )
+
+    if not token or not token.strip():
+        console.print("[red]API key cannot be empty.[/red]")
+        return
+
+    token = token.strip()
+
+    if "mcp" not in cfg:
+        cfg["mcp"] = {}
+    if "servers" not in cfg["mcp"]:
+        cfg["mcp"]["servers"] = {}
+    if "tavily" not in cfg["mcp"]["servers"]:
+        cfg["mcp"]["servers"]["tavily"] = {}
+
+    cfg["mcp"]["servers"]["tavily"]["token"] = token
+    cfg["mcp"]["servers"]["tavily"]["enabled"] = True
+    cfg["mcp"]["enabled"] = True
+    save_config(cfg, Path.cwd())
+
+    console.print()
+    console.print("[bold green]✓[/bold green] Tavily API key saved.")
+    console.print("[dim]Token stored in .haney/config.json[/dim]")
+    console.print()
+    console.print("[dim]Next: use [bold]/mcp connect tavily[/bold] to start the Tavily MCP server.[/dim]")
+
+
+def _cmd_mcp_login_notion(console: Console) -> None:
+    """Handle Notion MCP authentication — integration token prompt."""
+    cfg = load_config(Path.cwd())
+    notion_cfg = cfg.get("mcp", {}).get("servers", {}).get("notion", {})
+
+    existing_token = notion_cfg.get("token")
+    if existing_token:
+        console.print(
+            "[yellow]Already have a Notion integration token configured.[/yellow]"
+        )
+        if not Confirm.ask("Replace with a new token?", default=False):
+            console.print("[dim]Keeping existing Notion token.[/dim]")
+            return
+
+    console.print()
+    console.print("[bold]Notion MCP — Workspace Integration[/bold]")
+    console.print()
+    console.print(
+        "Notion MCP gives your AI assistant direct access to your Notion "
+        "workspace. It can search pages, read and write content, manage "
+        "databases, create comments, and more — all through your Notion "
+        "integration."
+    )
+    console.print()
+    console.print("  [bold cyan]Tools available (22 total):[/bold cyan]")
+    console.print("    • notion-search        — Search pages and databases by title")
+    console.print("    • notion-fetch         — Read full page or database content")
+    console.print("    • notion-create-pages  — Create new pages with properties")
+    console.print("    • notion-update-page   — Update page properties and content")
+    console.print("    • notion-create-database — Create databases with schemas")
+    console.print("    • notion-update-database — Update database properties")
+    console.print("    • notion-create-comment — Add comments to pages")
+    console.print("    • notion-get-comments  — Retrieve comments from a page")
+    console.print("    • notion-move-pages    — Move pages to new parent locations")
+    console.print("    • notion-duplicate-page — Duplicate pages with content")
+    console.print("    • notion-get-users     — List workspace users")
+    console.print("    • notion-get-user      — Get user details by ID")
+    console.print("    • notion-get-self      — Get current bot user info")
+    console.print()
+    console.print(
+        "[bold cyan]How it works:[/bold cyan] "
+        "Runs locally via [dim]npx @notionhq/notion-mcp-server[/dim] — "
+        "communicates over stdio. Your integration token is passed as "
+        "the [cyan]NOTION_TOKEN[/cyan] environment variable."
+    )
+    console.print()
+    console.print("[dim]Powered by:[/dim] [underline]https://github.com/makenotion/notion-mcp-server[/underline]")
+    console.print("[dim]Run via: npx -y @notionhq/notion-mcp-server[/dim]")
+    console.print()
+    console.print(
+        "[bold yellow]How to get your token:[/bold yellow]"
+    )
+    console.print("  [bold]1.[/bold] Go to [underline]https://www.notion.so/my-integrations[/underline]")
+    console.print("  [bold]2.[/bold] Click [bold]\"New integration\"[/bold]")
+    console.print("  [bold]3.[/bold] Give it a name (e.g. \"Haney\") and select your workspace")
+    console.print("  [bold]4.[/bold] Copy the [bold]\"Internal Integration Secret\"[/bold] (starts with [cyan]ntn_[/cyan])")
+    console.print("  [bold]5.[/bold] Paste it below")
+    console.print()
+    console.print(
+        "[bold yellow]⚠️  Important:[/bold yellow] After creating your integration, "
+        "you must [bold]explicitly grant it access[/bold] to the pages and databases "
+        "you want to use. Open each page/database in Notion, click [bold]••• → "
+        "Connections[/bold], and add your integration."
+    )
+    console.print()
+
+    token = Prompt.ask(
+        "Enter your Notion integration token (starts with ntn_)",
+        password=True,
+    )
+
+    if not token or not token.strip():
+        console.print("[red]Token cannot be empty.[/red]")
+        return
+
+    token = token.strip()
+
+    if not token.startswith("ntn_"):
+        console.print()
+        console.print(
+            "[yellow]⚠ Token doesn't start with 'ntn_'. "
+            "Notion integration secrets should start with 'ntn_'.[/yellow]"
+        )
+        if not Confirm.ask("Use this token anyway?", default=False):
+            console.print("[dim]Login cancelled.[/dim]")
+            return
+
+    if "mcp" not in cfg:
+        cfg["mcp"] = {}
+    if "servers" not in cfg["mcp"]:
+        cfg["mcp"]["servers"] = {}
+    if "notion" not in cfg["mcp"]["servers"]:
+        cfg["mcp"]["servers"]["notion"] = {}
+
+    cfg["mcp"]["servers"]["notion"]["token"] = token
+    cfg["mcp"]["servers"]["notion"]["enabled"] = True
+    cfg["mcp"]["enabled"] = True
+    save_config(cfg, Path.cwd())
+
+    console.print()
+    console.print("[bold green]✓[/bold green] Notion integration token saved.")
+    console.print("[dim]Token stored in .haney/config.json[/dim]")
+    console.print()
+    console.print("[dim]Next: use [bold]/mcp connect notion[/bold] to start the Notion MCP server.[/dim]")
+    console.print()
+    console.print(
+        "[bold yellow]⚠️  Reminder:[/bold yellow] Make sure you've granted your "
+        "integration access to the Notion pages and databases you want to work with."
+    )
+    console.print(
+        "[dim]In Notion: Open page → ••• → Connections → Add your integration[/dim]"
+    )
+
+
 # ── OAuth helpers ─────────────────────────────────────────────────────────────
 
 def _mcp_github_oauth_flow(console: Console) -> str | None:
@@ -732,6 +924,18 @@ def cmd_mcp_connect(console: Console, args: list[str]) -> None:
 
         console.print(f"[dim]Filesystem access scoped to: {', '.join(resolved_dirs)}[/dim]")
         console.print("[bold yellow]🔒 Reminder:[/bold yellow] The filesystem MCP can access ANY file within the allowed directories — not just project files.")
+        console.print()
+
+    if server_name == "tavily":
+        token = run_cfg.get("token")
+
+        # Inject the API key into the mcp-remote URL
+        api_url = f"https://mcp.tavily.com/mcp/?tavilyApiKey={token}"
+        run_cfg["args"] = ["-y", "mcp-remote", api_url]
+
+        console.print()
+        console.print("[bold cyan]Tavily MCP — Remote Web Search via mcp-remote[/bold cyan]")
+        console.print("[dim]Connecting to hosted Tavily MCP server. API key embedded in connection URL.[/dim]")
         console.print()
 
     try:
